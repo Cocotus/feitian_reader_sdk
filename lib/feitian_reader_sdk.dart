@@ -1,4 +1,3 @@
-
 import 'feitian_reader_sdk_platform_interface.dart';
 
 class FeitianReaderSdk {
