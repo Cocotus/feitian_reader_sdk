@@ -1,5 +1,5 @@
-name: orgacare_reader_sdk
-description: "Plugin for Flutter using german EGK Cardreader ORGACare 930 over bluetooth."
+name: feitian_reader_sdk
+description: "Flutter plugin for FEITIAN cardreader over bluetooth with PCSC interface."
 version: 0.0.1
 homepage:
 
@@ -35,7 +35,7 @@ flutter:
   plugin:
     platforms:
       ios:
-        pluginClass: OrgacareReaderSdkPlugin
+        pluginClass: FeitianReaderSdkPlugin
 
   # To add assets to your plugin package, add an assets section, like this:
   # assets:

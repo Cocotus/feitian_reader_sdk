@@ -1,39 +1,183 @@
-# orgacare_reader_sdk
+# feitian_reader_sdk
 
-Plugin for Flutter using german EGK Cardreader ORGACare 930 over bluetooth.
+Flutter plugin for FEITIAN cardreader over bluetooth with PCSC interface.
 
-## Erstellung eines Flutter Plugins Crash Kurs
+## Overview
 
-1. Mittels Konsole plugin-Ordner Template erstellen
-```
-create --template=plugin --platforms=ios --org de.ckssysteme orgacare_reader_sdk
+This plugin provides a Flutter interface to FEITIAN card readers (iR301, bR301, bR301 BLE, bR500, etc.) using the PCSC (Personal Computer/Smart Card) interface. It enables communication with smart cards via APDU (Application Protocol Data Unit) commands.
+
+## Features
+
+- **Reader Connection Management**: Connect and disconnect from FEITIAN card readers
+- **Card Power Control**: Power on/off smart cards (SCardConnect/SCardDisconnect)
+- **APDU Command Execution**: Send standard APDU commands to smart cards
+- **Card UID Reading**: Read unique identifier from cards
+- **PCSC Interface**: Full support for PCSC smart card communication
+- **Bluetooth Communication**: Wireless connection to FEITIAN readers
+
+## Installation
+
+Add this to your package's `pubspec.yaml` file:
+
+```yaml
+dependencies:
+  feitian_reader_sdk:
+    path: ../  # Adjust path as needed
 ```
 
-2. Beschreibung in pubspec.yaml und podspec Datei (im iOS-Ordner) anpassen!
+## Usage
 
-3. Implementierungsbeispiel in GITHUB suchen!! Beigelegt wurde Beispielprojekt in Swift mit xcFramework Format. D.h. ich suche auf Github für Beispiele z.B. mit:
-```
-path:*.podspec vendored_frameworks dependency 'Flutter' xcframework
+### Basic Example
+
+```dart
+import 'package:feitian_reader_sdk/feitian_reader_sdk.dart';
+import 'package:flutter/services.dart';
+
+class CardReaderExample {
+  final _feitianPlugin = FeitianReaderSdk();
+  static const platform = MethodChannel('feitian_reader_sdk');
+
+  Future<void> setupCardReader() async {
+    // Set up callback handlers
+    platform.setMethodCallHandler(_handleMethodCall);
+    
+    // Connect to reader
+    await _feitianPlugin.connectReader();
+    
+    // Power on card
+    await _feitianPlugin.powerOnCard();
+    
+    // Send APDU command (e.g., select application)
+    await _feitianPlugin.sendApduCommand('00A4040007A0000002471001');
+    
+    // Read card UID
+    await _feitianPlugin.readUID();
+    
+    // Power off card
+    await _feitianPlugin.powerOffCard();
+    
+    // Disconnect reader
+    await _feitianPlugin.disconnectReader();
+  }
+
+  Future<void> _handleMethodCall(MethodCall call) async {
+    switch (call.method) {
+      case 'log':
+        print('Log: ${call.arguments}');
+        break;
+      case 'data':
+        print('Data: ${call.arguments}');
+        break;
+      case 'apduResponse':
+        print('APDU Response: ${call.arguments}');
+        break;
+    }
+  }
+}
 ```
 
-3. podspec Datei (im iOS-Ordner) anpassen, Ergänzen um verfügbares .xcFramework Projekt
+### Common APDU Commands
+
+```dart
+// Select application
+await plugin.sendApduCommand('00A4040007A0000002471001');
+
+// Get challenge (8 bytes)
+await plugin.sendApduCommand('0084000008');
+
+// Read binary data
+await plugin.sendApduCommand('00B00000FF');
 ```
-    # WHCCareKit_iOS framework ORGACare 930
-    s.preserve_paths = 'WHCCareKit_iOS.xcframework'
-    s.xcconfig = { 'OTHER_LDFLAGS' => '-framework WHCCareKit_iOS' }
-    s.vendored_frameworks = 'WHCCareKit_iOS.xcframework'
-    s.frameworks = 'WHCCareKit_iOS'
-    s.library = 'c++'
+
+## API Reference
+
+### Methods
+
+- `Future<String?> getPlatformVersion()` - Get iOS platform version
+- `Future<String?> connectReader()` - Connect to FEITIAN card reader
+- `Future<String?> disconnectReader()` - Disconnect from card reader
+- `Future<String?> powerOnCard()` - Power on smart card (SCardConnect)
+- `Future<String?> powerOffCard()` - Power off smart card (SCardDisconnect)
+- `Future<String?> sendApduCommand(String apdu)` - Send APDU command to card
+- `Future<String?> readUID()` - Read card unique identifier
+
+### Callbacks (Method Channel)
+
+The plugin sends callbacks via method channel `'feitian_reader_sdk'`:
+
+- `log` - Log messages from native layer
+- `data` - Data received from card
+- `apduResponse` - Response from APDU command execution
+
+## Architecture
+
 ```
-4. Das beigelegte xcFramwork des Herstellers wird in den iOS Ordner kopiert
-5. Ein sdk Ordner im root erstellt um das Demoprojekt des Herstellers gezippt dort miteinzuchecken
-6. Das Interface im lib Ordner des SDK entspreched anpassen um die neuen Methoden. 
-   Im ios-Ordner müssen swift Dateien angepasst werden. da dies die Brücke zum nativen XCODE/SDK ist. Für Debugging Zwecke print-Ausgaben einbringen, dann kann man in flutter das example Projekt debuggen, und parallel wird das XCODE Projekt(Runner) geöffnet, und die Print-Ausgaben sind in XCODE sichtbar.
-7. Implementieren eines Aufrufs aus example app, main.dart des Plugins.
-8. Falls alles läuft dann dieses komplette Projekt in Ordner plugins in ceusrd_ios Projekt einchecken
-9. Damit ceusrd das Plugin findet ist pubspec.yaml anzupassen z.B. so
+Flutter Dart Layer
+    ↓
+feitian_reader_sdk.dart (Public API)
+    ↓
+feitian_reader_sdk_platform_interface.dart (Abstract Interface)
+    ↓
+feitian_reader_sdk_method_channel.dart (Method Channel Implementation)
+    ↓
+iOS Native Layer
+    ↓
+FeitianReaderSdkPlugin.swift (Flutter Bridge)
+    ↓
+FeitianCardManager.swift (PCSC Manager)
+    ↓
+FEITIAN SDK (winscard.h, ft301u.h)
 ```
-  orgacare_reader_sdk:
-    path: plugins/orgacare_reader_sdk
-```
-10. Dann kann analog der main.dart im example Projekt die Übernahme des Auslesecodes in ceusrd erfolgen. Z.B für Kartenleser: cardreader_controller.dart
+
+## PCSC Interface
+
+This plugin uses the PCSC (PC/SC) standard for smart card communication:
+
+- **SCardEstablishContext** - Initialize PCSC context
+- **SCardConnect** - Connect to smart card
+- **SCardTransmit** - Send APDU commands
+- **SCardControl** - Send control commands to reader
+- **SCardDisconnect** - Disconnect from card
+- **SCardReleaseContext** - Release PCSC context
+
+## FEITIAN Demo Project Reference
+
+The implementation is based on the FEITIAN SDK demo project located at:
+`sdk/3.5.71/demo/iReader`
+
+Key reference files:
+- `OperationViewController.m/.mm` - Main card reader logic
+- `winscard.h` - PCSC interface definitions
+- `ft301u.h` - FEITIAN-specific functions
+
+## Requirements
+
+- **Flutter**: >= 3.3.0
+- **Dart**: >= 3.4.3
+- **iOS**: >= 12.0
+- **FEITIAN SDK**: Version 3.5.71 or later
+
+## Platform Support
+
+Currently supports:
+- ✅ iOS (12.0+)
+- ❌ Android (planned for future release)
+
+## Notes
+
+- The FEITIAN SDK framework is required for full functionality
+- PCSC communication requires proper card reader initialization
+- APDU commands must be valid hex strings (minimum 5 characters, even length)
+- Some functions (like readUID) may not be supported on all FEITIAN reader models
+
+## Additional Documentation
+
+See [FEITIAN_IMPLEMENTATION.md](FEITIAN_IMPLEMENTATION.md) for detailed technical implementation notes.
+
+## License
+
+See LICENSE file for details.
+
+## Support
+
+For issues and questions, please refer to the FEITIAN SDK documentation in `sdk/3.5.71/demo/`.

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:orgacare_reader_sdk/orgacare_reader_sdk.dart';
-import 'package:xml/xml.dart';
+import 'package:feitian_reader_sdk/feitian_reader_sdk.dart';
 
 void main() {
   runApp(const MyApp());
@@ -17,60 +16,44 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> {
   String _platformVersion = 'Unknown';
   String _feedback = 'No feedback yet';
-  final _orgacareDemoPlugin = OrgacareReaderSdk();
-  static const platform = MethodChannel('orgacare_reader_sdk');
+  final _feitianReaderPlugin = FeitianReaderSdk();
+  static const platform = MethodChannel('feitian_reader_sdk');
   final List<String> _logsAndData = [];
-  bool _isDeviceLocked = false;
-  bool _noDataMobileMode = false;
-
-  final List<String> _nodesToDisplay = [
-    'geburtsdatum',
-    'vorname',
-    'nachname',
-    'geschlecht',
-    'titel',
-    'postleitzahl',
-    'ort',
-    'wohnsitzlaendercode',
-    'strasse',
-    'hausnummer',
-    'beginn',
-    'kostentraegerkennung',
-    'kostentraegerlaendercode',
-    'name',
-    'versichertenart',
-    'versicherten_id'
-  ];
+  final TextEditingController _apduController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     initPlatformState();
     platform.setMethodCallHandler(_handleMethodCall);
+    // Set default APDU command
+    _apduController.text = '00A4040007A0000002471001';
+  }
+
+  @override
+  void dispose() {
+    _apduController.dispose();
+    super.dispose();
   }
 
   Future<void> _handleMethodCall(MethodCall call) async {
     switch (call.method) {
       case 'log':
         setState(() {
-          _logsAndData.add(call.arguments);
+          _logsAndData.add('LOG: ${call.arguments}');
         });
         break;
       case 'data':
         setState(() {
           final dataStrings = List<String>.from(call.arguments);
-          final filteredDataNodes = _parseAndFilterXmlData(dataStrings);
-          _logsAndData.addAll(filteredDataNodes.map((node) => '${node.keys.first}: ${node.values.first}'));
+          for (var data in dataStrings) {
+            _logsAndData.add('DATA: $data');
+          }
         });
         break;
-      case 'deviceIsLocked':
+      case 'apduResponse':
         setState(() {
-          _isDeviceLocked = true;
-        });
-        break;
-      case 'noDataMobileMode':
-        setState(() {
-          _noDataMobileMode = true;
+          _logsAndData.add('APDU Response: ${call.arguments}');
         });
         break;
     }
@@ -79,7 +62,7 @@ class _MyAppState extends State<MyApp> {
   Future<void> initPlatformState() async {
     String platformVersion;
     try {
-      platformVersion = await _orgacareDemoPlugin.getPlatformVersion() ?? 'Unknown platform version';
+      platformVersion = await _feitianReaderPlugin.getPlatformVersion() ?? 'Unknown platform version';
     } on PlatformException {
       platformVersion = 'Failed to get platform version.';
     }
@@ -91,11 +74,11 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
-  Future<void> _updateFeedback(String methodName, Future<String> Function() method) async {
+  Future<void> _updateFeedback(String methodName, Future<String?> Function() method) async {
     try {
       final result = await method();
       setState(() {
-        _feedback = '$methodName: $result';
+        _feedback = '$methodName: ${result ?? "Success"}';
       });
     } catch (e) {
       setState(() {
@@ -104,38 +87,9 @@ class _MyAppState extends State<MyApp> {
     }
   }
 
-  List<Map<String, String>> _parseAndFilterXmlData(List<String> dataStrings) {
-    List<Map<String, String>> nodes = [];
-    for (var data in dataStrings) {
-      final document = XmlDocument.parse(data);
-      final elements = document.findAllElements('*');
-      for (var element in elements) {
-        final nodeName = element.name.toString().toLowerCase();
-        if (_nodesToDisplay.contains(nodeName)) {
-          final nodeContent = element.innerText;
-          final formattedContent = _formatNodeContent(nodeName, nodeContent);
-          nodes.add({element.name.toString(): formattedContent});
-        }
-      }
-    }
-    return nodes;
-  }
-
-  String _formatNodeContent(String nodeName, String content) {
-    if ((nodeName == 'geburtsdatum' || nodeName == 'beginn') && content.length == 8) {
-      final year = content.substring(0, 4);
-      final month = content.substring(4, 6);
-      final day = content.substring(6, 8);
-      return '$day.$month.$year';
-    }
-    return content;
-  }
-
   void _clearLogsAndData() {
     setState(() {
       _logsAndData.clear();
-      _isDeviceLocked = false;
-      _noDataMobileMode = false;
     });
   }
 
@@ -144,55 +98,168 @@ class _MyAppState extends State<MyApp> {
     return MaterialApp(
       home: Scaffold(
         appBar: AppBar(
-          title: const Text('Card Data Manager'),
+          title: const Text('FEITIAN Card Reader Demo'),
         ),
-        body: Center(
+        body: Padding(
+          padding: const EdgeInsets.all(16.0),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              Text('Platform Version: $_platformVersion\n'),
-              Text('Feedback: $_feedback\n'),
-              if (_isDeviceLocked) const Text('Device is locked', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-              if (_noDataMobileMode) const Text('No card inserted', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+              Text('Platform: $_platformVersion', style: const TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Text('Status: $_feedback', style: const TextStyle(fontSize: 12)),
+              const SizedBox(height: 16),
+              
+              // Reader Connection Buttons
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        _clearLogsAndData();
+                        _updateFeedback('Connect Reader', () async {
+                          return await _feitianReaderPlugin.connectReader();
+                        });
+                      },
+                      child: const Text('Connect Reader'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => _updateFeedback('Disconnect Reader', () async {
+                        return await _feitianReaderPlugin.disconnectReader();
+                      }),
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                      child: const Text('Disconnect'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              
+              // Card Power Buttons
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => _updateFeedback('Power On Card', () async {
+                        return await _feitianReaderPlugin.powerOnCard();
+                      }),
+                      child: const Text('Power On Card'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => _updateFeedback('Power Off Card', () async {
+                        return await _feitianReaderPlugin.powerOffCard();
+                      }),
+                      child: const Text('Power Off Card'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              
+              // APDU Input Section
+              const Text('APDU Command:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _apduController,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: 'Enter APDU hex command',
+                  helperText: 'Example: 00A4040007A0000002471001',
+                ),
+                style: const TextStyle(fontFamily: 'Courier'),
+              ),
+              const SizedBox(height: 8),
               ElevatedButton(
                 onPressed: () {
-                  _clearLogsAndData();
-                  _updateFeedback('Load VSD', () async {
-                    final result = await _orgacareDemoPlugin.loadVSD();
-                    return result ?? 'No result';
+                  final apdu = _apduController.text.trim();
+                  if (apdu.isEmpty) {
+                    setState(() {
+                      _feedback = 'Error: APDU command is empty';
+                    });
+                    return;
+                  }
+                  _updateFeedback('Send APDU', () async {
+                    return await _feitianReaderPlugin.sendApduCommand(apdu);
                   });
                 },
-                child: const Text('Load VSD'),
+                child: const Text('Send APDU Command'),
               ),
+              const SizedBox(height: 8),
+              
+              // Quick Commands
+              Wrap(
+                spacing: 8,
+                children: [
+                  ElevatedButton(
+                    onPressed: () {
+                      _apduController.text = '00A4040007A0000002471001';
+                    },
+                    child: const Text('Select App'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () {
+                      _apduController.text = '0084000008';
+                    },
+                    child: const Text('Get Challenge'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () {
+                      _apduController.text = '00B00000FF';
+                    },
+                    child: const Text('Read Binary'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              
+              // Read UID Button
               ElevatedButton(
-                onPressed: () => _updateFeedback('Load NFD', () async {
-                  final result = await _orgacareDemoPlugin.loadNFD();
-                  return result ?? 'No result';
+                onPressed: () => _updateFeedback('Read UID', () async {
+                  return await _feitianReaderPlugin.readUID();
                 }),
-                child: const Text('Load NFD'),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+                child: const Text('Read Card UID'),
               ),
-              ElevatedButton(
-                onPressed: () => _updateFeedback('Load DPE', () async {
-                  final result = await _orgacareDemoPlugin.loadDPE();
-                  return result ?? 'No result';
-                }),
-                child: const Text('Load DPE'),
+              const SizedBox(height: 16),
+              
+              // Logs Section
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Logs & Data:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  TextButton(
+                    onPressed: _clearLogsAndData,
+                    child: const Text('Clear'),
+                  ),
+                ],
               ),
-              ElevatedButton(
-                onPressed: () => _updateFeedback('Load AMTS', () async {
-                  final result = await _orgacareDemoPlugin.loadAMTS();
-                  return result ?? 'No result';
-                }),
-                child: const Text('Load AMTS'),
-              ),
+              const Divider(),
               Expanded(
-                child: ListView.builder(
-                  itemCount: _logsAndData.length,
-                  itemBuilder: (context, index) {
-                    return ListTile(
-                      title: Text(_logsAndData[index]),
-                    );
-                  },
+                child: Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: _logsAndData.isEmpty
+                      ? const Center(child: Text('No logs yet'))
+                      : ListView.builder(
+                          itemCount: _logsAndData.length,
+                          itemBuilder: (context, index) {
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              child: Text(
+                                _logsAndData[index],
+                                style: const TextStyle(fontSize: 12, fontFamily: 'Courier'),
+                              ),
+                            );
+                          },
+                        ),
                 ),
               ),
             ],
