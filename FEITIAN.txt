@@ -1,0 +1,79 @@
+Hallo Herr Müller,
+
+ 
+
+ich habe meine Kollegen bei Feitian kontaktiert und nachstehende Infos erhalten.
+
+ 
+
+Dear Peter:
+Thanks for reaching out to us about the reader iOS SDK.
+
+1. For iOS app that integrates Fetian reader iOS SDK:
+To develop iOS app that works with bR301-C18 reader via Bluetooth, customers' dev team needs to integrate Feitian reader iOS SDK:
+https://github.com/FeitianSmartcardReader/FEITIAN_MOBILE_READERS/tree/master/iOS_SDK_ForApplePrimitiveCCID/3.5.71
+
+In this Github repo, we have the SDK libs and the "iReader" demo project, customer's team can refer to this open-source code of iReader project to integrate the iOS sdk.
+The latest version is v3.5.71.
+
+The iReader demo project can just be opened in XCode and built to run in an Apple device which have Bluetooth capacity, and with a Feitian Bluetooth reader like bR301-C18.
+And let me know if customer has any problem during the SDK integration.
+
+
+2. For submitting to Apple iOS App Store:
+    You may need to provide these information before submitting to the iOS App Store:
+
+1. Name of app as it will appear in App Store:
+
+2. App version:
+
+3. Planned release data?
+
+4. App Store category:
+
+5. Bundle identifier:
+
+6. protocol names:
+
+7. functional overview:
+
+8. name of the developer that will submit the app to the app store
+
+Thanks.
+
+ 
+
+Mit diesen Informationen sollten Sie jetzt in der Lage sein die App-Entwicklung inkl. Integration des Lesers vorzunehmen.
+
+Wenn Die App über den Apple-Store erhältlich sein soll, können Sie mir die Antworten auf die 8 Fragen gerne zusenden.
+
+Wir kümmern uns dann diese bei Apple über den Hersteller Feitian einzureichen.
+
+ 
+
+Freundliche Grüße,
+
+ 
+
+Peter Peiró
+
+PCP GmbH
+
+Beschreibung: Beschreibung: PCP Logo
+
+Mail:       peter.peiro@pcp-europe.com
+
+Office:   +49 8851 929 2225
+
+Mobile:  +49 160 8036585
+
+Web:      www.pcp-europe.com
+
+ 
+
+PCP GmbH
+
+Rothenberg Nord 3
+82431 Kochel am See
+
+Germany

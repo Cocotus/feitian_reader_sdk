@@ -1,0 +1,489 @@
+// swift-interface-format-version: 1.0
+// swift-compiler-version: Apple Swift version 5.10 (swiftlang-5.10.0.13 clang-1500.3.9.4)
+// swift-module-flags: -target arm64-apple-ios15.0 -enable-objc-interop -enable-library-evolution -swift-version 5 -enforce-exclusivity=checked -O -enable-bare-slash-regex -module-name WHCCareKit_iOS
+import CoreBluetooth
+import CoreNFC
+import Foundation
+import Swift
+import UIKit
+@_exported import WHCCareKit_iOS
+import _Concurrency
+import _StringProcessing
+import _SwiftConcurrencyShims
+import zlib
+public enum CTorgError : Swift.Error {
+  case bluetoothDeviceNotConnected
+  case bluetoothDiscoverServiceFails
+  case bluetoothDiscoverCharacteristicFails
+  case bluetoothNotificationError
+  case ctinit_missing
+  case ctclose_fails
+  case ctdata_fails
+  case ctdata_wrong_destination_address
+  case ctdata_wrong_source_address
+  case ctdata_no_data
+  case ctdata_wrong_buffer_size
+  case ERR_INVALID
+  case ERR_CT
+  case ERR_TRANS
+  case ERR_MEMORY
+  case ERR_HOST
+  case ERR_HTSI
+  public static func == (a: WHCCareKit_iOS.CTorgError, b: WHCCareKit_iOS.CTorgError) -> Swift.Bool
+  public func hash(into hasher: inout Swift.Hasher)
+  public var hashValue: Swift.Int {
+    get
+  }
+}
+public enum CareTaskManagerActions {
+  case none
+  case getStatus
+  case resetCT
+  case insertCard
+  case runCardToCard
+  case load_eGK_VSD
+  case load_KVK_VSD
+  case load_eGK_NFD
+  case load_eGK_DPE
+  case load_eGK_AMTS
+  case removeCard(Swift.Int)
+}
+public enum CareTaskManagerMessages {
+  case managerInitialisationFails
+  case managerIsBusy
+  case taskExecutionFails
+  case unsupportedCareVersion
+  case unsupportedCareMode
+  case usupportedCard
+  case insertCardCanceledByCare
+  case timeoutInsertCard
+  case timeoutRemoveCard
+  case noDataMobileMode
+  case deviceIsLocked
+  case errorGetCareStatus
+  case errorKVK_VSDData
+  case errorEGK_VSDData
+  case errorEGK_NFDData
+  case errorEGK_DPEData
+  case errorEGK_AMTSData
+  case cardRemoved(Swift.Int)
+}
+public class CareTaskManager {
+  public var delegate: any WHCCareKit_iOS.CareTaskManagerDelegate
+  public init(ctapi: WHCCareKit_iOS.CTorgios, delegate: any WHCCareKit_iOS.CareTaskManagerDelegate, completion: @escaping () -> ())
+  public func cleanup(completion: @escaping () -> ())
+  public var isBusy: Swift.Bool {
+    get
+  }
+  public var currentTaskState: (activity: Swift.Bool, currentAction: WHCCareKit_iOS.CareTaskManagerActions) {
+    get
+  }
+  @objc deinit
+}
+extension WHCCareKit_iOS.CareTaskManager {
+  public func ejectCard(slotIDs: Swift.UInt8...)
+}
+extension WHCCareKit_iOS.CareTaskManager {
+  public func getMode(completion: @escaping (WHCCareKit_iOS.HealthDeviceOperationMode?) -> ())
+}
+extension WHCCareKit_iOS.CareTaskManager {
+  public func loadVSD(targetEnvironment: WHCCareKit_iOS.HealthDeviceTargetEnvironment? = nil)
+}
+extension WHCCareKit_iOS.CareTaskManager {
+  public func loadNFD(targetEnvironment: WHCCareKit_iOS.HealthDeviceTargetEnvironment, emergencyIndicator: Swift.Bool, updateIndicator: Swift.Bool)
+}
+extension WHCCareKit_iOS.CareTaskManager {
+  public func loadDPE(targetEnvironment: WHCCareKit_iOS.HealthDeviceTargetEnvironment, emergencyIndicator: Swift.Bool, updateIndicator: Swift.Bool)
+}
+extension WHCCareKit_iOS.CareTaskManager {
+  public func loadAMTS(targetEnvironment: WHCCareKit_iOS.HealthDeviceTargetEnvironment)
+}
+public protocol CareTaskManagerDelegate {
+  func careTaskManager(didUpdateState currentAction: WHCCareKit_iOS.CareTaskManagerActions)
+  func careTaskManager(didThrowMessage message: WHCCareKit_iOS.CareTaskManagerMessages)
+  func careTaskManager(didLoadVSD_KVK dataset: Foundation.Data)
+  func careTaskManager(didLoadVSD dataset: [Foundation.Data])
+  func careTaskManager(didLoadNFD dataset: [Foundation.Data])
+  func careTaskManager(didLoadDPE dataset: [Foundation.Data])
+  func careTaskManager(didLoadAMTS dataset: [Foundation.Data])
+}
+@_inheritsConvenienceInitializers @_hasMissingDesignatedInitializers public class CTorgios : WHCCareKit_iOS.CTorg {
+  override public init(peripheral: CoreBluetooth.CBPeripheral, completion: @escaping (WHCCareKit_iOS.CTorgError?) -> ())
+  @objc deinit
+}
+public struct HealthDeviceConstants {
+  public struct FID {
+    public struct EGK {
+      public static let EF_PD: Foundation.Data
+      public static let EF_VD: Foundation.Data
+      public static let EF_GVD: Foundation.Data
+      public static let EF_StatusVD: Foundation.Data
+      public static let EF_ATR: Foundation.Data
+      public static let EF_GDO: Foundation.Data
+      public static let EF_Version2: Foundation.Data
+      public static let EF_CardAccess: Foundation.Data
+      public static let EF_C_CH_ENC_R2048: Foundation.Data
+      public static let EF_C_CH_AUT_R2048: Foundation.Data
+      public static let EF_C_eGK_AUT_CVC_E256: Foundation.Data
+      public static let EF_C_CA_eGK_CS_E256: Foundation.Data
+      public static let EF_NFD: Foundation.Data
+      public static let EF_StatusNFD: Foundation.Data
+      public static let EF_DPE: Foundation.Data
+      public static let EF_StatusDPE: Foundation.Data
+      public static let EF_AMTS: Foundation.Data
+      public static let EF_StatusAMTS: Foundation.Data
+    }
+    public struct HBA {
+      public static let EF_C_HPC_AUTR_CVC_E256: Foundation.Data
+      public static let EF_ATR: Foundation.Data
+      public static let EF_GDO: Foundation.Data
+      public static let EF_C_CA_HPC_CS_E256: Foundation.Data
+      public static let EF_CardAccess: Foundation.Data
+      public static let EF_Version2: Foundation.Data
+    }
+    public struct SMCB {
+      public static let EF_C_SMC_AUTR_CVC_E256: Foundation.Data
+      public static let EF_ATR: Foundation.Data
+      public static let EF_GDO: Foundation.Data
+      public static let EF_C_CA_SMC_CS_E256: Foundation.Data
+      public static let EF_CardAccess: Foundation.Data
+      public static let EF_Version2: Foundation.Data
+    }
+  }
+  public struct AID {
+    public struct EGK {
+      public static let MF: Foundation.Data
+      public static let HCA: Foundation.Data
+      public static let ESIGN: Foundation.Data
+      public static let HCA_DF_NFD: Foundation.Data
+      public static let HCA_DF_DPE: Foundation.Data
+      public static let HCA_DF_AMTS: Foundation.Data
+    }
+    public struct KVK {
+      public static let MF1: Foundation.Data
+      public static let MF2: Foundation.Data
+    }
+    public struct MobKT {
+      public static let KVK1: Foundation.Data
+      public static let KVK2: Foundation.Data
+      public static let eGK: Foundation.Data
+    }
+    public struct HBA {
+      public static let MF: Foundation.Data
+    }
+    public struct SMCB {
+      public static let MF: Foundation.Data
+    }
+  }
+  public struct HealthCardPinIDs {
+    public struct EGK {
+      public static let pinCH: Swift.UInt8
+      public static let mrpinNFD_Read: Swift.UInt8
+      public static let mrpinDPE: Swift.UInt8
+      public static let mrpinAMTS: Swift.UInt8
+      public static let mrpinHome: Swift.UInt8
+    }
+    public struct HBA {
+      public static let pinCH: Swift.UInt8
+    }
+    public struct SMCB {
+      public static let pinCH: Swift.UInt8
+    }
+  }
+  public struct LeFeld {
+    public static let WILDCARD_SHORT: Swift.Int
+    public static let WILDCARD_EXTENDED: Swift.Int
+  }
+  public struct MobKT {
+    public struct SlotIDs {
+      public static let Slot1: Swift.UInt8
+      public static let Slot2: Swift.UInt8
+    }
+  }
+}
+@_hasMissingDesignatedInitializers public class HealthDeviceMobKTTasks {
+  @objc deinit
+}
+extension WHCCareKit_iOS.HealthDeviceMobKTTasks {
+  public func insertCard(waitingTime: Swift.UInt8, slotID: Swift.UInt8 = HealthDeviceConstants.MobKT.SlotIDs.Slot1, completion: @escaping (WHCCareKit_iOS.HealthDeviceAPDUResponse) -> ())
+  public func insertCard(waitingTime: Swift.UInt8, slotID: Swift.UInt8 = HealthDeviceConstants.MobKT.SlotIDs.Slot1) -> WHCCareKit_iOS.HealthDeviceAPDUResponse
+  public func ejectCard(waitingTime: Swift.UInt8, slotID: Swift.UInt8 = HealthDeviceConstants.MobKT.SlotIDs.Slot1, completion: @escaping (WHCCareKit_iOS.HealthDeviceAPDUResponse) -> ())
+  public func ejectCard(waitingTime: Swift.UInt8, slotID: Swift.UInt8 = HealthDeviceConstants.MobKT.SlotIDs.Slot1) -> WHCCareKit_iOS.HealthDeviceAPDUResponse
+  public func getStatusMobKT(completion: @escaping (WHCCareKit_iOS.HealthDeviceAPDUResponse) -> ())
+  public func getStatusMobKT() -> WHCCareKit_iOS.HealthDeviceAPDUResponse
+  public func resetCT(completion: @escaping (WHCCareKit_iOS.HealthDeviceAPDUResponse) -> ())
+  public func resetCT() -> WHCCareKit_iOS.HealthDeviceAPDUResponse
+  public func eraseBinary(completion: @escaping (WHCCareKit_iOS.HealthDeviceAPDUResponse) -> ())
+  public func eraseBinary() -> WHCCareKit_iOS.HealthDeviceAPDUResponse
+  public func selectFileKVK(completion: @escaping (WHCCareKit_iOS.HealthDeviceAPDUResponse) -> ())
+  public func selectFileKVK() -> WHCCareKit_iOS.HealthDeviceAPDUResponse
+  public func selectFileEGK(completion: @escaping (WHCCareKit_iOS.HealthDeviceAPDUResponse) -> ())
+  public func selectFileEGK() -> WHCCareKit_iOS.HealthDeviceAPDUResponse
+  public func readKVK(completion: @escaping (WHCCareKit_iOS.HealthDeviceAPDUResponse) -> ())
+  public func readKVK() -> WHCCareKit_iOS.HealthDeviceAPDUResponse
+  public func readEGK_SatusVD(completion: @escaping (WHCCareKit_iOS.HealthDeviceAPDUResponse) -> ())
+  public func readEGK_SatusVD() -> WHCCareKit_iOS.HealthDeviceAPDUResponse
+  public func readEGK_PD(completion: @escaping (WHCCareKit_iOS.HealthDeviceAPDUResponse, Foundation.Data?) -> ())
+  public func readEGK_PD() -> (response: WHCCareKit_iOS.HealthDeviceAPDUResponse, dataPD: Foundation.Data?)
+  public func readEGKVD_GVD(completion: @escaping (WHCCareKit_iOS.HealthDeviceAPDUResponse, Foundation.Data?, Foundation.Data?) -> ())
+  public func readEGKVD_GVD() -> (response: WHCCareKit_iOS.HealthDeviceAPDUResponse, dataVD: Foundation.Data?, dataGVD: Foundation.Data?)
+  public func getEGK_VSD(completion: @escaping (WHCCareKit_iOS.HealthDeviceAPDUResponse, Foundation.Data?, Foundation.Data?, Foundation.Data?) -> ())
+  public func getEGK_VSD() -> (response: WHCCareKit_iOS.HealthDeviceAPDUResponse, dataPD: Foundation.Data?, dataVD: Foundation.Data?, dataGVD: Foundation.Data?)
+  public func verifyPin(slotID: Swift.UInt8 = HealthDeviceConstants.MobKT.SlotIDs.Slot2, completion: @escaping (WHCCareKit_iOS.HealthDeviceAPDUResponse?, Swift.Bool) -> ())
+  public func verifyPin(slotID: Swift.UInt8 = HealthDeviceConstants.MobKT.SlotIDs.Slot2) -> (response: WHCCareKit_iOS.HealthDeviceAPDUResponse?, success: Swift.Bool)
+  public func getCareVersion(completion: @escaping (Swift.Float?) -> ())
+  public func getCareVersion() -> Swift.Float?
+  public func getOperationMode(completion: @escaping (WHCCareKit_iOS.HealthDeviceOperationMode?) -> ())
+  public func getOperationMode() -> WHCCareKit_iOS.HealthDeviceOperationMode?
+  public enum ReadDataError : Swift.Error {
+    case setupError
+    case communicationError(code: WHCCareKit_iOS.HealthDeviceAPDUResponse)
+    case dataError
+    case noData
+    case deviceLocked
+    case generalError(code: Swift.String)
+    case accessDenied
+  }
+  public func readVSD(completion: (WHCCareKit_iOS.HealthDeviceMobKTTasks.ReadDataError?, Foundation.Data?, Foundation.Data?, Foundation.Data?, Foundation.Data?) -> ())
+  public func readVSD_KVK(completion: (WHCCareKit_iOS.HealthDeviceMobKTTasks.ReadDataError?, Foundation.Data?) -> ())
+}
+public struct HealthDeviceOperationTrailer {
+  public enum SuccessType {
+    case success, error
+    public static func == (a: WHCCareKit_iOS.HealthDeviceOperationTrailer.SuccessType, b: WHCCareKit_iOS.HealthDeviceOperationTrailer.SuccessType) -> Swift.Bool
+    public func hash(into hasher: inout Swift.Hasher)
+    public var hashValue: Swift.Int {
+      get
+    }
+  }
+  public let value: (sw1: Swift.UInt8, sw2: Swift.UInt8)
+  public let name: Swift.String
+  public let description: Swift.String
+  public let type: WHCCareKit_iOS.HealthDeviceOperationTrailer.SuccessType
+}
+@_hasMissingDesignatedInitializers public class HealthDeviceKVKTaks {
+  @objc deinit
+}
+extension WHCCareKit_iOS.HealthDeviceKVKTaks {
+  public func readData(completion: @escaping (WHCCareKit_iOS.HealthDeviceAPDUResponse) -> ())
+  public func readData() -> WHCCareKit_iOS.HealthDeviceAPDUResponse
+}
+public typealias CTorgiosError = WHCCareKit_iOS.CTorgError
+@_inheritsConvenienceInitializers @_hasMissingDesignatedInitializers public class HealthDeviceHBATaks : WHCCareKit_iOS.HealthDeviceGHCTaks {
+  @objc deinit
+}
+public enum CareBluetoothManagerStates {
+  case none
+  case standby
+  case scanning
+  case connecting
+  case connected
+  public static func == (a: WHCCareKit_iOS.CareBluetoothManagerStates, b: WHCCareKit_iOS.CareBluetoothManagerStates) -> Swift.Bool
+  public func hash(into hasher: inout Swift.Hasher)
+  public var hashValue: Swift.Int {
+    get
+  }
+}
+public enum CareBluetoothManagerMessages {
+  case conncentionRequestTimeout
+  case bluetoothIsOff
+  case bluetoothNotAuthorized
+  case unknownBluetoothState
+  case peripheralConnectionError
+  case peripheralDisconnected
+  case newPeripheralDetected
+  public static func == (a: WHCCareKit_iOS.CareBluetoothManagerMessages, b: WHCCareKit_iOS.CareBluetoothManagerMessages) -> Swift.Bool
+  public func hash(into hasher: inout Swift.Hasher)
+  public var hashValue: Swift.Int {
+    get
+  }
+}
+@objc @_inheritsConvenienceInitializers public class CareBluetoothManager : ObjectiveC.NSObject {
+  public var delegate: (any WHCCareKit_iOS.CareBluetoothManagerDelegate)!
+  @objc override dynamic public init()
+  @objc deinit
+}
+extension WHCCareKit_iOS.CareBluetoothManager {
+  public func startScanForPeripherals()
+  public func stopScanForPeripherals()
+  public func connectToDevice(deviceIndex: Swift.Int)
+  public func disconnectFromDevice()
+  public var discoveredPeripheralNames: [Swift.String] {
+    get
+  }
+  public var connectedPeripheralName: Swift.String {
+    get
+  }
+  public var currentConnectionState: WHCCareKit_iOS.CareBluetoothManagerStates {
+    get
+  }
+}
+extension WHCCareKit_iOS.CareBluetoothManager : CoreBluetooth.CBCentralManagerDelegate {
+  @objc dynamic public func centralManagerDidUpdateState(_ central: CoreBluetooth.CBCentralManager)
+  @objc dynamic public func centralManager(_ central: CoreBluetooth.CBCentralManager, didDiscover peripheral: CoreBluetooth.CBPeripheral, advertisementData: [Swift.String : Any], rssi RSSI: Foundation.NSNumber)
+  @objc dynamic public func centralManager(_ central: CoreBluetooth.CBCentralManager, didFailToConnect peripheral: CoreBluetooth.CBPeripheral, error: (any Swift.Error)?)
+  @objc dynamic public func centralManager(_ central: CoreBluetooth.CBCentralManager, didConnect peripheral: CoreBluetooth.CBPeripheral)
+  @objc dynamic public func centralManager(_ central: CoreBluetooth.CBCentralManager, didDisconnectPeripheral peripheral: CoreBluetooth.CBPeripheral, error: (any Swift.Error)?)
+}
+public protocol CareBluetoothManagerDelegate {
+  func careBluetoothManager(didUpdateState state: WHCCareKit_iOS.CareBluetoothManagerStates)
+  func careBluetoothManager(didThrowMessage message: WHCCareKit_iOS.CareBluetoothManagerMessages)
+  func careBluetoothManager(didConnect ctapi: WHCCareKit_iOS.CTorgios)
+}
+@_inheritsConvenienceInitializers @_hasMissingDesignatedInitializers public class HealthDeviceSMCBTaks : WHCCareKit_iOS.HealthDeviceGHCTaks {
+  @objc deinit
+}
+@_hasMissingDesignatedInitializers public class HealthDeviceGHCTaks {
+  @objc deinit
+}
+extension WHCCareKit_iOS.HealthDeviceGHCTaks {
+  public enum CardToCardError : Swift.Error {
+    case generalError(code: Swift.String)
+    case ctapiNotAvailable
+    case insertCardSlot1Fails
+    case unsupportedCardSlot1
+    case insertCardSlot2Fails
+    case unsupportedCardSlot2
+    case pinVerificationSlot2Fails
+    case handleTransportPinSlot2Fails
+  }
+}
+extension WHCCareKit_iOS.HealthDeviceGHCTaks {
+  public func readFile(configuration: WHCCareKit_iOS.HealthDeviceCommunication.Configuration, aid: Foundation.Data, fidFile: Foundation.Data, offset: Swift.Int = 0, expRespLen: Swift.Int, completion: @escaping (WHCCareKit_iOS.HealthDeviceAPDUResponse) -> ())
+  public func readFile(configuration: WHCCareKit_iOS.HealthDeviceCommunication.Configuration, aid: Foundation.Data, fidFile: Foundation.Data, offset: Swift.Int = 0, expRespLen: Swift.Int) -> WHCCareKit_iOS.HealthDeviceAPDUResponse
+}
+extension WHCCareKit_iOS.HealthDeviceGHCTaks {
+  public func authenticateCardToCard(targetEnv: WHCCareKit_iOS.HealthDeviceTargetEnvironment, completion: @escaping (WHCCareKit_iOS.HealthDeviceAPDUResponse?, WHCCareKit_iOS.HealthDeviceGHCTaks.CardToCardError?, Swift.Bool) -> ())
+  public func authenticateCardToCard(targetEnv: WHCCareKit_iOS.HealthDeviceTargetEnvironment) -> (response: WHCCareKit_iOS.HealthDeviceAPDUResponse?, error: WHCCareKit_iOS.HealthDeviceGHCTaks.CardToCardError?, success: Swift.Bool)
+  public func getPinAccess(completion: @escaping ([Swift.String : Swift.Bool]?) -> ())
+  public func getPinAccess() -> [Swift.String : Swift.Bool]?
+}
+public struct HealthDeviceAPDUResponse {
+  public init(success: Swift.Bool, data: Foundation.Data? = nil, trailer: WHCCareKit_iOS.HealthDeviceOperationTrailer? = nil, info: Swift.String? = nil)
+  public let success: Swift.Bool
+  public let data: Foundation.Data?
+  public let trailer: WHCCareKit_iOS.HealthDeviceOperationTrailer?
+  public let info: Swift.String?
+}
+public enum HealthDeviceTargetEnvironment {
+  case test
+  case productive
+  public static func == (a: WHCCareKit_iOS.HealthDeviceTargetEnvironment, b: WHCCareKit_iOS.HealthDeviceTargetEnvironment) -> Swift.Bool
+  public func hash(into hasher: inout Swift.Hasher)
+  public var hashValue: Swift.Int {
+    get
+  }
+}
+public enum HealthDeviceOperationMode {
+  case stationary, mobile
+  public static func == (a: WHCCareKit_iOS.HealthDeviceOperationMode, b: WHCCareKit_iOS.HealthDeviceOperationMode) -> Swift.Bool
+  public func hash(into hasher: inout Swift.Hasher)
+  public var hashValue: Swift.Int {
+    get
+  }
+}
+public enum HealthDeviceTaskManagerError : Swift.Error {
+  case ctinit_fails
+  case taskpool_empty
+  public static func == (a: WHCCareKit_iOS.HealthDeviceTaskManagerError, b: WHCCareKit_iOS.HealthDeviceTaskManagerError) -> Swift.Bool
+  public func hash(into hasher: inout Swift.Hasher)
+  public var hashValue: Swift.Int {
+    get
+  }
+}
+public class HealthDeviceTaskManager {
+  public init(ctapi: WHCCareKit_iOS.CTorgios)
+  public var tasks: WHCCareKit_iOS.HealthDeviceTaskManager.Tasks
+  public func run(nfcRuningTasksMessage: Swift.String = "Running tasks", errorHandler: @escaping (any Swift.Error) -> ())
+  public func stop(completion: (() -> ())?)
+  @objc deinit
+}
+extension WHCCareKit_iOS.HealthDeviceTaskManager {
+  @_hasMissingDesignatedInitializers public class Tasks {
+    public var pool: (() -> ())?
+    final public let ghc: WHCCareKit_iOS.HealthDeviceGHCTaks
+    final public let eGK: WHCCareKit_iOS.HealthDeviceEGKTaks
+    final public let hba: WHCCareKit_iOS.HealthDeviceHBATaks
+    final public let smcb: WHCCareKit_iOS.HealthDeviceSMCBTaks
+    final public let kvk: WHCCareKit_iOS.HealthDeviceKVKTaks?
+    final public let mobKT: WHCCareKit_iOS.HealthDeviceMobKTTasks?
+    @objc deinit
+  }
+}
+extension WHCCareKit_iOS.CTorg {
+  public static let SDA_HOST: Swift.UInt8
+  public static let SDA_REMOTE_HOST: Swift.UInt8
+  public static let DSA_ICC1: Swift.UInt8
+  public static let DSA_CARDTERMINAL: Swift.UInt8
+  public static let DSA_ICC2: Swift.UInt8
+  public static let DSA_ICC3: Swift.UInt8
+  public static let DSA_ICC4: Swift.UInt8
+  public static let DSA_ICC14: Swift.UInt8
+  public static let bluetoothServiceUUID: CoreBluetooth.CBUUID
+}
+@_hasMissingDesignatedInitializers public class CTorg {
+  public init(peripheral: CoreBluetooth.CBPeripheral, completion: @escaping (WHCCareKit_iOS.CTorgError?) -> ())
+  public var receiveTimeoutForNextCommand: Foundation.TimeInterval
+  @objc deinit
+}
+extension WHCCareKit_iOS.CTorg {
+  public func CTDEORGT1_init() throws
+  public func CTDEORGT1_data(inoutDAD: inout Swift.UInt8, inoutSAD: inout Swift.UInt8, inCommand: Foundation.Data, inLenr: Swift.Int) throws -> Foundation.Data?
+  @objc dynamic public func CTDEORGT1_close(completion: @escaping () -> ())
+}
+@_inheritsConvenienceInitializers @_hasMissingDesignatedInitializers public class HealthDeviceEGKTaks : WHCCareKit_iOS.HealthDeviceGHCTaks {
+  @objc deinit
+}
+extension WHCCareKit_iOS.HealthDeviceEGKTaks {
+  public enum ReadDataError : Swift.Error {
+    case setupError
+    case communicationError(code: WHCCareKit_iOS.HealthDeviceAPDUResponse)
+    case dataError
+    case generalError(code: Swift.String)
+    case accessDenied
+    case noPublicGVD
+  }
+}
+extension WHCCareKit_iOS.HealthDeviceEGKTaks {
+  public func read_VSD(completion: @escaping (WHCCareKit_iOS.HealthDeviceEGKTaks.ReadDataError?, Foundation.Data?, Foundation.Data?, Foundation.Data?, Foundation.Data?) -> ())
+  public func read_VSD() -> (error: WHCCareKit_iOS.HealthDeviceEGKTaks.ReadDataError?, dataStatusVD: Foundation.Data?, dataPD: Foundation.Data?, dataVD: Foundation.Data?, dataGVD: Foundation.Data?)
+  public func read_NFD(emergencyIndicator: Swift.Bool, updateIndicator: Swift.Bool, completion: @escaping (WHCCareKit_iOS.HealthDeviceEGKTaks.ReadDataError?, Foundation.Data?, Foundation.Data?) -> ())
+  public func read_NFD(emergencyIndicator: Swift.Bool, updateIndicator: Swift.Bool) -> (error: WHCCareKit_iOS.HealthDeviceEGKTaks.ReadDataError?, dataStatusNFD: Foundation.Data?, dataNFD: Foundation.Data?)
+  public func read_DPE(emergencyIndicator: Swift.Bool, updateIndicator: Swift.Bool, completion: @escaping (WHCCareKit_iOS.HealthDeviceEGKTaks.ReadDataError?, Foundation.Data?, Foundation.Data?) -> ())
+  public func read_DPE(emergencyIndicator: Swift.Bool, updateIndicator: Swift.Bool) -> (error: WHCCareKit_iOS.HealthDeviceEGKTaks.ReadDataError?, dataStatusDPE: Foundation.Data?, dataDPE: Foundation.Data?)
+  public func read_AMTS(completion: @escaping (WHCCareKit_iOS.HealthDeviceEGKTaks.ReadDataError?, Foundation.Data?, Foundation.Data?, Foundation.Data?) -> ())
+  public func read_AMTS() -> (error: WHCCareKit_iOS.HealthDeviceEGKTaks.ReadDataError?, dataStatusAMTS: Foundation.Data?, dataEW: Foundation.Data?, dataAMTS: Foundation.Data?)
+}
+@_hasMissingDesignatedInitializers public class HealthDeviceCommunication {
+  @_hasMissingDesignatedInitializers public class Interface {
+    @objc deinit
+  }
+  @_hasMissingDesignatedInitializers public class Configuration {
+    @objc deinit
+  }
+  @objc deinit
+}
+extension WHCCareKit_iOS.HealthDeviceCommunication {
+  @_hasMissingDesignatedInitializers public class InterfaceCTAPI : WHCCareKit_iOS.HealthDeviceCommunication.Interface {
+    public init(ctapi: WHCCareKit_iOS.CTorgios)
+    @objc deinit
+  }
+  @_hasMissingDesignatedInitializers public class ConfigurationCTAPI : WHCCareKit_iOS.HealthDeviceCommunication.Configuration {
+    public init(t1SrcAddr: Swift.UInt8 = CTorg.SDA_HOST, t1DestAddr: Swift.UInt8)
+    @objc deinit
+  }
+}
+extension WHCCareKit_iOS.CTorgError : Swift.Equatable {}
+extension WHCCareKit_iOS.CTorgError : Swift.Hashable {}
+extension WHCCareKit_iOS.HealthDeviceOperationTrailer.SuccessType : Swift.Equatable {}
+extension WHCCareKit_iOS.HealthDeviceOperationTrailer.SuccessType : Swift.Hashable {}
+extension WHCCareKit_iOS.CareBluetoothManagerStates : Swift.Equatable {}
+extension WHCCareKit_iOS.CareBluetoothManagerStates : Swift.Hashable {}
+extension WHCCareKit_iOS.CareBluetoothManagerMessages : Swift.Equatable {}
+extension WHCCareKit_iOS.CareBluetoothManagerMessages : Swift.Hashable {}
+extension WHCCareKit_iOS.HealthDeviceTargetEnvironment : Swift.Equatable {}
+extension WHCCareKit_iOS.HealthDeviceTargetEnvironment : Swift.Hashable {}
+extension WHCCareKit_iOS.HealthDeviceOperationMode : Swift.Equatable {}
+extension WHCCareKit_iOS.HealthDeviceOperationMode : Swift.Hashable {}
+extension WHCCareKit_iOS.HealthDeviceTaskManagerError : Swift.Equatable {}
+extension WHCCareKit_iOS.HealthDeviceTaskManagerError : Swift.Hashable {}

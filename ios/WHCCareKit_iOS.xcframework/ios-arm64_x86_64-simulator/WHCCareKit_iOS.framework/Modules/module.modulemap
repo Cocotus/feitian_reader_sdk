@@ -1,0 +1,11 @@
+framework module WHCCareKit_iOS {
+  umbrella header "WHCCareKit_iOS.h"
+  export *
+
+  module * { export * }
+}
+
+module WHCCareKit_iOS.Swift {
+  header "WHCCareKit_iOS-Swift.h"
+  requires objc
+}
