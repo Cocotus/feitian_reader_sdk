@@ -22,8 +22,8 @@ struct SCARD_IO_REQUEST {
     var dwProtocol: UInt32
     var cbPciLength: UInt32
     
-    init(protocol: UInt32) {
-        self.dwProtocol = protocol
+    init(cardProtocol: UInt32) {
+        self.dwProtocol = cardProtocol
         self.cbPciLength = UInt32(MemoryLayout<SCARD_IO_REQUEST>.size)
     }
 }
@@ -238,7 +238,7 @@ class FeitianCardManager {
         
         // Karte verbinden
         var card: SCARDHANDLE = 0
-        var protocol: UInt32 = 0
+        var cardProtocol: UInt32 = 0
         
         let ret = SCardConnect(
             contextHandle,
@@ -246,14 +246,14 @@ class FeitianCardManager {
             SCARD_SHARE_SHARED,
             SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1,
             &card,
-            &protocol
+            &cardProtocol
         )
         
         if ret == SCARD_S_SUCCESS {
             cardHandle = card
-            activeProtocol = protocol
+            activeProtocol = cardProtocol
             isCardConnected = true
-            sendLog("Karte verbunden (Protokoll: T\(protocol == SCARD_PROTOCOL_T1 ? "1" : "0"))")
+            sendLog("Karte verbunden (Protokoll: T\(cardProtocol == SCARD_PROTOCOL_T1 ? "1" : "0"))")
             
             // Benachrichtige Flutter
             DispatchQueue.main.async {
@@ -299,7 +299,7 @@ class FeitianCardManager {
         var recvBuffer = [UInt8](repeating: 0, count: 2048 + 128)
         var recvLength: UInt32 = UInt32(recvBuffer.count)
         
-        var pioSendPci = SCARD_IO_REQUEST(protocol: activeProtocol)
+        var pioSendPci = SCARD_IO_REQUEST(cardProtocol: activeProtocol)
         
         let ret = apdu.withUnsafeBufferPointer { apduPtr in
             recvBuffer.withUnsafeMutableBufferPointer { recvPtr in
