@@ -840,6 +840,7 @@ class FeitianCardManager {
         // 2. Reset Card Terminal
         guard resetCardTerminal() else {
             sendLog("Warnung: Kartenterminal konnte nicht zurückgesetzt werden")
+			return
         }
         
         // 3. Request Card
