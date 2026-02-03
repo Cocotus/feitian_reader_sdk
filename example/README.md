@@ -1,6 +1,6 @@
-# orgacare_reader_sdk_example
+# feitian_reader_sdk_example
 
-Demonstrates how to use the orgacare_reader_sdk plugin.
+Demonstrates how to use the feitian_reader_sdk plugin.
 
 ## Getting Started
 
