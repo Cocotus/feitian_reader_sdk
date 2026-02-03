@@ -18,33 +18,61 @@ public class FeitianReaderSdkPlugin: NSObject, FlutterPlugin {
     switch call.method {
     case "getPlatformVersion":
         let platformVersion = "iOS " + UIDevice.current.systemVersion
-        FeitianCardManager.shared.sendLog("getPlatformVersion called: \(platformVersion)")
         result(platformVersion)
-    case "connectReader":
-        FeitianCardManager.shared.connectReader()
-        result("connectReader called")
-    case "disconnectReader":
-        FeitianCardManager.shared.disconnectReader()
-        result("disconnectReader called")
-    case "sendApduCommand":
+        
+    // Bluetooth Scanner Methods
+    case "startBluetoothScan":
+        FeitianCardManager.shared.startBluetoothScan()
+        result("Bluetooth scan started")
+        
+    case "stopBluetoothScan":
+        FeitianCardManager.shared.stopBluetoothScan()
+        result("Bluetooth scan stopped")
+        
+    case "connectToReader":
         if let args = call.arguments as? [String: Any],
-           let apdu = args["apdu"] as? String {
-            FeitianCardManager.shared.sendCommand(apdu)
-            result("sendApduCommand called with APDU: \(apdu)")
+           let deviceName = args["deviceName"] as? String {
+            FeitianCardManager.shared.connectToReader(deviceName: deviceName)
+            result("Connecting to reader: \(deviceName)")
         } else {
             result(FlutterError(code: "INVALID_ARGUMENT", 
-                               message: "APDU command required", 
+                               message: "Device name required", 
                                details: nil))
         }
-    case "readUID":
-        FeitianCardManager.shared.readUID()
-        result("readUID called")
+        
+    case "disconnectReader":
+        FeitianCardManager.shared.disconnectReader()
+        result("Reader disconnected")
+        
+    case "getBatteryLevel":
+        FeitianCardManager.shared.getBatteryLevel()
+        result("Getting battery level")
+        
+    // Card Operations
     case "powerOnCard":
         FeitianCardManager.shared.powerOnCard()
-        result("powerOnCard called")
+        result("Card power on initiated")
+        
     case "powerOffCard":
         FeitianCardManager.shared.powerOffCard()
-        result("powerOffCard called")
+        result("Card powered off")
+        
+    // EGK Reading
+    case "readEGKCard":
+        FeitianCardManager.shared.readEGKCard()
+        result("EGK card reading initiated")
+        
+    // Legacy Methods (kept for backwards compatibility)
+    case "connectReader":
+        // Legacy method - just log
+        result("Use startBluetoothScan and connectToReader instead")
+        
+    case "sendApduCommand":
+        result("APDU commands are handled internally during EGK reading")
+        
+    case "readUID":
+        result("UID reading not implemented in current version")
+        
     default:
         result(FlutterMethodNotImplemented)
     }
