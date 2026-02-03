@@ -1,6 +1,19 @@
 import Flutter
-import Foundation
+import UIKit
 import Compression
+
+// Import C library directly
+import func zlib.inflateInit2_
+import func zlib.inflate
+import func zlib.inflateEnd
+import var zlib.Z_OK
+import var zlib.Z_STREAM_END
+import var zlib.Z_SYNC_FLUSH
+import var zlib.MAX_WBITS
+import var zlib.ZLIB_VERSION
+import struct zlib.z_stream
+import typealias zlib.Bytef
+import typealias zlib.uInt
 
 // MARK: - PCSC Type Definitions
 typealias SCARDCONTEXT = Int
@@ -837,11 +850,11 @@ class FeitianCardManager {
             return
         }
         
-        // 2. Reset Card Terminal
-        guard resetCardTerminal() else {
-            sendLog("Warnung: Kartenterminal konnte nicht zurückgesetzt werden")
-			return
-        }
+// 2. Reset Card Terminal
+guard resetCardTerminal() else {
+    sendLog("Warnung: Kartenterminal konnte nicht zurückgesetzt werden")
+    return
+}
         
         // 3. Request Card
         guard requestCard() else {
