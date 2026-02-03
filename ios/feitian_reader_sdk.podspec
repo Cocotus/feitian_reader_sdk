@@ -22,9 +22,8 @@ Plugin for Flutter for using FEITIAN cardreader over bluetooth with PCSC interfa
     'DEFINES_MODULE' => 'YES', 
     'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386',
     'HEADER_SEARCH_PATHS' => '"$(PODS_TARGET_SRCROOT)/../sdk/include"',
-    'SWIFT_INCLUDE_PATHS' => '$(inherited) "$(PODS_TARGET_SRCROOT)/Classes"',
-    'LIBRARY_SEARCH_PATHS' => '"$(PODS_TARGET_SRCROOT)/../sdk/lib/Release/$(PLATFORM_NAME)"',
-    'OTHER_SWIFT_FLAGS' => '$(inherited) -import-objc-header "$(PODS_TARGET_SRCROOT)/Classes/FeitianBridgingHeader.h"'
+    'LIBRARY_SEARCH_PATHS' => '"$(PODS_TARGET_SRCROOT)/../sdk/lib/Release/$(PLATFORM_NAME)"'
+    # REMOVED: SWIFT_INCLUDE_PATHS and OTHER_SWIFT_FLAGS
   }
   s.swift_version = '5.0'
 
