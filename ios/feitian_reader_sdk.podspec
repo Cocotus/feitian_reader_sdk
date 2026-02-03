@@ -17,20 +17,23 @@ Plugin for Flutter for using FEITIAN cardreader over bluetooth with PCSC interfa
   s.dependency 'Flutter'
   s.platform = :ios, '12.0'
 
+  # FEITIAN SDK version
+  feitian_sdk_version = '3.5.71'
+  
   # Flutter.framework does not contain a i386 slice.
   s.pod_target_xcconfig = { 
     'DEFINES_MODULE' => 'YES', 
     'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386',
-    'HEADER_SEARCH_PATHS' => '$(PODS_TARGET_SRCROOT)/../sdk/3.5.71/include',
+    'HEADER_SEARCH_PATHS' => "$(PODS_TARGET_SRCROOT)/../sdk/#{feitian_sdk_version}/include",
     'OTHER_LDFLAGS' => '-lz'
   }
   s.swift_version = '5.0'
 
   # FEITIAN SDK integration
-  s.preserve_paths = '../sdk/3.5.71/**/*'
+  s.preserve_paths = "../sdk/#{feitian_sdk_version}/**/*"
   s.vendored_libraries = [
-    '../sdk/3.5.71/lib/Release/iphoneos/libiRockey301_ccid.a',
-    '../sdk/3.5.71/lib/Release/iphonesimulator/libiRockey301_ccid.a'
+    "../sdk/#{feitian_sdk_version}/lib/Release/iphoneos/libiRockey301_ccid.a",
+    "../sdk/#{feitian_sdk_version}/lib/Release/iphonesimulator/libiRockey301_ccid.a"
   ]
   s.libraries = ['c++', 'z']
   s.frameworks = ['CoreBluetooth', 'Foundation']

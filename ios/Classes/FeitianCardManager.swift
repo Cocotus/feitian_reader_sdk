@@ -84,7 +84,7 @@ class FeitianCardManager {
     private var isCardConnected: Bool = false
     
     // EGK Karten-Informationen
-    private var maxBufferSize: Int = 256
+    private var maxBufferSize: Int = 1024  // Sicherer Standardwert
     private var cardGeneration: String = ""
     private var schemaVersion: String = ""
     
@@ -567,9 +567,15 @@ class FeitianCardManager {
         let containerLength = Int(lengthResponse[0]) << 8 | Int(lengthResponse[1])
         sendLog("PD Container-Länge: \(containerLength) Bytes")
         
+        // Validiere Container-Länge
+        guard containerLength > 0 && containerLength <= 65535 else {
+            sendLog("Ungültige Container-Länge: \(containerLength)")
+            return nil
+        }
+        
         // Prüfe gegen maxBufferSize
         guard containerLength <= maxBufferSize else {
-            sendLog("Container-Länge überschreitet max. Puffergröße")
+            sendLog("Container-Länge (\(containerLength)) überschreitet max. Puffergröße (\(maxBufferSize))")
             return nil
         }
         
@@ -622,9 +628,15 @@ class FeitianCardManager {
         
         sendLog("VD Start: \(vdStart), Ende: \(vdEnd), Länge: \(vdLength)")
         
+        // Validiere VD-Länge
+        guard vdLength > 0 && vdLength <= 65535 else {
+            sendLog("Ungültige VD-Länge: \(vdLength)")
+            return nil
+        }
+        
         // Prüfe gegen maxBufferSize
         guard vdLength <= maxBufferSize else {
-            sendLog("VD-Länge überschreitet max. Puffergröße")
+            sendLog("VD-Länge (\(vdLength)) überschreitet max. Puffergröße (\(maxBufferSize))")
             return nil
         }
         
@@ -676,9 +688,11 @@ class FeitianCardManager {
         
         // Dekodiere als ISO-8859-15 (Latin-1)
         if let xmlString = String(data: decompressed, encoding: .isoLatin1) {
+            sendLog("XML dekodiert mit ISO-8859-15 Encoding")
             return xmlString
         } else if let xmlString = String(data: decompressed, encoding: .utf8) {
             // Fallback zu UTF-8
+            sendLog("XML dekodiert mit UTF-8 Encoding (Fallback)")
             return xmlString
         } else {
             sendLog("XML-Dekodierung fehlgeschlagen")
@@ -736,6 +750,9 @@ class FeitianCardManager {
     }
     
     /// Extrahiert Wert aus XML-Tag
+    /// Hinweis: Einfaches String-Matching für EGK-XML-Daten.
+    /// Funktioniert für die standardisierten EGK-XML-Strukturen.
+    /// Für komplexere XML-Strukturen sollte ein vollständiger XML-Parser verwendet werden.
     private func extractXMLValue(_ xml: String, tag: String) -> String? {
         let openTag = "<\(tag)>"
         let closeTag = "</\(tag)>"
@@ -913,11 +930,11 @@ extension Data {
             throw NSError(domain: "GZIPError", code: Int(status), userInfo: nil)
         }
         
-        var decompressed = Data(capacity: self.count * 2)
+        var decompressed = Data(capacity: self.count * 4)  // 4x für bessere Kompressionsraten
         
         repeat {
             if Int(stream.total_out) >= decompressed.count {
-                decompressed.count += self.count / 2
+                decompressed.count += self.count  // Verdopple statt halbe Größe
             }
             
             let inputCount = self.count
