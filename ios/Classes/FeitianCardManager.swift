@@ -82,15 +82,15 @@ func FtGetDevVer(_ hContext: SCARDCONTEXT, _ firmwareRevision: UnsafeMutablePoin
 // ReaderInterface class from FEITIAN SDK Framework
 // These methods are provided by the SDK's native implementation
 @objc class ReaderInterface: NSObject {
-    func setDelegate(_ delegate: ReaderInterfaceDelegate?)
-    func setAutoPair(_ autoPair: Bool)
-    func connectPeripheralReader(_ readerName: String, timeout: Float) -> Bool
-    func disConnectCurrentPeripheralReader()
+    func setDelegate(_ delegate: ReaderInterfaceDelegate?) {}
+    func setAutoPair(_ autoPair: Bool) {}
+    func connectPeripheralReader(_ readerName: String, timeout: Float) -> Bool { return false }
+    func disConnectCurrentPeripheralReader() {}
 }
 
 // FTDeviceType class from FEITIAN SDK
 @objc class FTDeviceType: NSObject {
-    @objc static func setDeviceType(_ type: UInt32)
+    @objc static func setDeviceType(_ type: UInt32) {}
 }
 
 // Device type constants from SDK
