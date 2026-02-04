@@ -1,6 +1,7 @@
 import Flutter
 import UIKit
 import Compression
+import CoreBluetooth
 
 // Import zlib functions
 import func zlib.inflateInit2_
@@ -110,6 +111,9 @@ class FeitianCardManager: NSObject {
     // ReaderInterface from FEITIAN SDK
     private var readerInterface: ReaderInterface?
     
+    // Core Bluetooth manager for device scanning
+    private var centralManager: CBCentralManager?
+    
     // Reader state
     private var isReaderConnected = false
     private var connectedReaderName: String?
@@ -126,12 +130,9 @@ class FeitianCardManager: NSObject {
     }
     
     private func setupReaderInterface() {
+        // Only basic initialization - NO scanning or SDK context setup
         readerInterface = ReaderInterface()
         readerInterface?.setDelegate(self)
-        readerInterface?.setAutoPair(false) // Manual pairing like in demo
-        
-        // Support all device types
-        FTDeviceType.setDeviceType(IR301_AND_BR301 | BR301BLE_AND_BR500 | LINE_TYPEC)
     }
     
     func initialize(channel: FlutterMethodChannel) {
@@ -146,15 +147,53 @@ class FeitianCardManager: NSObject {
         sendLog("Starte Bluetooth-Scan über ReaderInterface...")
         isScanning = true
         
-        // Bluetooth scanning is automatically handled by the ReaderInterface SDK
-        // when setDelegate is called during initialization. The SDK continuously
-        // scans for FEITIAN devices and calls findPeripheralReader() for each
-        // device discovered. No explicit scan start is needed.
+        // Establish PCSC context (like in demo ScanDeviceController.mm)
+        if scardContext == 0 {
+            sendLog("Erstelle PCSC Context...")
+            var context: SCARDCONTEXT = 0
+            let ret = SCardEstablishContext(SCARD_SCOPE_SYSTEM, nil, nil, &context)
+            
+            if ret == SCARD_S_SUCCESS {
+                scardContext = context
+                sendLog("PCSC Context erstellt: \(context)")
+                
+                // Set timeout like in demo (50 seconds)
+                let timeoutRet = FtSetTimeout(scardContext, 50000)
+                if timeoutRet == SCARD_S_SUCCESS {
+                    sendLog("Set time out success")
+                } else {
+                    sendLog("Set timeout error: \(mapErrorCode(timeoutRet))")
+                }
+            } else {
+                sendLog("Fehler beim Erstellen des PCSC Context: \(mapErrorCode(ret))")
+                return
+            }
+        }
+        
+        // Set auto pairing (must be called after context establishment, like in demo)
+        readerInterface?.setAutoPair(false)
+        
+        // Support all device types
+        FTDeviceType.setDeviceType(IR301_AND_BR301 | BR301BLE_AND_BR500 | LINE_TYPEC)
+        
+        // Initialize CBCentralManager with serial dispatch queue (like in demo)
+        let centralQueue = DispatchQueue(label: "com.feitian.central", attributes: [])
+        centralManager = CBCentralManager(delegate: self, queue: centralQueue)
+        
+        sendLog("Bluetooth-Scan initialisiert")
     }
     
     func stopBluetoothScan() {
         sendLog("Stoppe Bluetooth-Scan...")
         isScanning = false
+        
+        // Stop CBCentralManager (like in demo)
+        if let central = centralManager {
+            central.stopScan()
+            centralManager = nil
+            sendLog("CBCentralManager gestoppt")
+        }
+        
         sendLog("Bluetooth-Scan gestoppt")
     }
     
@@ -201,24 +240,6 @@ class FeitianCardManager: NSObject {
         channel?.invokeMethod("readerDisconnected", arguments: nil)
     }
     
-    // MARK: - PCSC Context
-    
-    private func establishContext() {
-        sendLog("Erstelle PCSC Context...")
-        
-        var context: SCARDCONTEXT = 0
-        let ret = SCardEstablishContext(SCARD_SCOPE_SYSTEM, nil, nil, &context)
-        
-        if ret == SCARD_S_SUCCESS {
-            scardContext = context
-            sendLog("PCSC Context erstellt: \(context)")
-            
-            // Set timeout like in demo (50 seconds)
-            FtSetTimeout(scardContext, 50000)
-        } else {
-            sendLog("Fehler beim Erstellen des PCSC Context: \(mapErrorCode(ret))")
-        }
-    }
     
     // MARK: - Card Operations
     
@@ -714,9 +735,10 @@ extension FeitianCardManager: ReaderInterfaceDelegate {
             isReaderConnected = true
             connectedReaderName = bluetoothID
             
-            // Establish PCSC context
+            // Note: PCSC context should already be established in startBluetoothScan()
+            // This is just a safety check
             if scardContext == 0 {
-                establishContext()
+                sendLog("WARNUNG: PCSC Context noch nicht erstellt - bitte startBluetoothScan() aufrufen")
             }
             
             // Notify Flutter
@@ -773,5 +795,60 @@ extension FeitianCardManager: ReaderInterfaceDelegate {
         channel?.invokeMethod("batteryLevel", arguments: [
             "level": battery
         ])
+    }
+}
+
+// MARK: - CBCentralManagerDelegate Implementation
+extension FeitianCardManager: CBCentralManagerDelegate {
+    
+    func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        switch central.state {
+        case .poweredOn:
+            sendLog("Bluetooth ist eingeschaltet")
+            // Start scanning for peripherals (like in demo)
+            scanForPeripherals()
+            
+        case .poweredOff:
+            sendLog("Bluetooth ist ausgeschaltet")
+            
+        case .unsupported:
+            sendLog("Bluetooth wird nicht unterstützt")
+            
+        case .unauthorized:
+            sendLog("Bluetooth-Berechtigung fehlt")
+            
+        case .resetting:
+            sendLog("Bluetooth wird zurückgesetzt")
+            
+        case .unknown:
+            sendLog("Bluetooth-Status unbekannt")
+            
+        @unknown default:
+            sendLog("Unbekannter Bluetooth-Status")
+        }
+    }
+    
+    private func scanForPeripherals() {
+        guard let central = centralManager else { return }
+        
+        // Scan with allow duplicates like in demo
+        let options: [String: Any] = [
+            CBCentralManagerScanOptionAllowDuplicatesKey: true
+        ]
+        
+        sendLog("Starte Bluetooth-Scan nach Peripheriegeräten...")
+        central.scanForPeripherals(withServices: nil, options: options)
+    }
+    
+    func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String : Any], rssi RSSI: NSNumber) {
+        // This method would be called for discovered peripherals
+        // However, the ReaderInterface SDK handles device discovery through findPeripheralReader()
+        // So this is mainly for logging/debugging purposes
+        if let name = peripheral.name, !name.isEmpty {
+            // Only log FEITIAN devices
+            if name.contains("BR") || name.contains("IR") || name.contains("bR") {
+                sendLog("CBCentralManager discovered: \(name) (RSSI: \(RSSI))")
+            }
+        }
     }
 }
