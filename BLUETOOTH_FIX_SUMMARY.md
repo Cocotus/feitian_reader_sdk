@@ -13,7 +13,7 @@ The `ReaderInterfaceDelegate` implementation in `FeitianCardManager.swift` was i
 // Discovered devices lists for deduplication (like in demo)
 private var cbDiscoveredDevices: [String] = []  // Like _discoverdList in demo
 private var sdkReportedDevices: [String] = []   // Like _deviceList in demo
-private let deviceListQueue = DispatchQueue(label: "com.feitian.devicelist", attributes: [])
+private let deviceListQueue = DispatchQueue(label: "com.feitian.devicelist")
 ```
 - `cbDiscoveredDevices`: Tracks devices discovered by CBCentralManager (like `_discoverdList` in demo)
 - `sdkReportedDevices`: Tracks devices reported by SDK via findPeripheralReader (like `_deviceList` in demo)
