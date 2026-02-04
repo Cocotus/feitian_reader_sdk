@@ -9,6 +9,14 @@ class SDKLogCapture {
     // Buffer size for reading log output
     private static let bufferSize = 4096
     
+    // Reusable date formatter for efficiency
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .medium
+        formatter.dateStyle = .none
+        return formatter
+    }()
+    
     // Pipe for stderr/stdout redirection
     private static var logPipe: [Int32] = [0, 0]
     private static var originalStderr: Int32 = 0
@@ -30,9 +38,28 @@ class SDKLogCapture {
             originalStderr = dup(STDERR_FILENO)
             originalStdout = dup(STDOUT_FILENO)
             
+            // Check if dup succeeded
+            guard originalStderr >= 0, originalStdout >= 0 else {
+                return
+            }
+            
             // Redirect stderr/stdout to pipe
-            dup2(logPipe[1], STDERR_FILENO)
-            dup2(logPipe[1], STDOUT_FILENO)
+            let redirectStderr = dup2(logPipe[1], STDERR_FILENO)
+            let redirectStdout = dup2(logPipe[1], STDOUT_FILENO)
+            
+            // Check if redirection succeeded
+            guard redirectStderr >= 0, redirectStdout >= 0 else {
+                // Restore originals if redirection failed
+                if originalStderr >= 0 {
+                    close(originalStderr)
+                }
+                if originalStdout >= 0 {
+                    close(originalStdout)
+                }
+                close(logPipe[0])
+                close(logPipe[1])
+                return
+            }
             
             // Dispatch source for continuous reading
             logDispatchSource = DispatchSource.makeReadSource(fileDescriptor: logPipe[0], queue: .global())
@@ -46,6 +73,9 @@ class SDKLogCapture {
                     if let message = String(data: data, encoding: .utf8) {
                         logCallback?(message.trimmingCharacters(in: .whitespacesAndNewlines))
                     }
+                } else if bytes < 0 {
+                    // Read error occurred, but we continue since this is best-effort logging
+                    // The dispatch source will be called again if more data becomes available
                 }
             }
             logDispatchSource?.resume()
@@ -59,10 +89,7 @@ class SDKLogCapture {
     private static func simulateReaderStatusThreadMessage() {
         // Explicit logging of the readerStatusThread message
         let timestamp = Date()
-        let formatter = DateFormatter()
-        formatter.timeStyle = .medium
-        formatter.dateStyle = .none
-        let timeString = formatter.string(from: timestamp)
+        let timeString = timeFormatter.string(from: timestamp)
         logCallback?("[\(timeString)] start-----readerStatusThread")
     }
     
