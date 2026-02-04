@@ -289,7 +289,9 @@ class FeitianCardManager: NSObject {
         
         // Send APDU command to query battery level
         // The SDK will asynchronously call didGetBattery() with the result
-        _ = sendAPDU("0084000008")
+        if sendAPDU("0084000008") == nil {
+            sendLog("Fehler: Batteriestand-Abfrage konnte nicht gesendet werden")
+        }
     }
     
     // MARK: - APDU Communication
