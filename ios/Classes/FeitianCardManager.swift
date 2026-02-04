@@ -70,6 +70,8 @@ func FtSetTimeout(_ hContext: SCARDCONTEXT, _ timeout: UInt32) -> Int32
 func FtGetDevVer(_ hContext: SCARDCONTEXT, _ firmwareRevision: UnsafeMutablePointer<CChar>, _ hardwareRevision: UnsafeMutablePointer<CChar>) -> Int32
 
 // MARK: - ReaderInterface Protocol Bridge (from FEITIAN SDK)
+// These classes are implemented in the FEITIAN SDK framework (libiRockey301_ccid.a)
+// and are bridged here for Swift interoperability
 @objc protocol ReaderInterfaceDelegate: AnyObject {
     @objc optional func findPeripheralReader(_ readerName: String)
     @objc optional func readerInterfaceDidChange(_ attached: Bool, bluetoothID: String, andslotnameArray slotArray: [String])
@@ -78,6 +80,7 @@ func FtGetDevVer(_ hContext: SCARDCONTEXT, _ firmwareRevision: UnsafeMutablePoin
 }
 
 // ReaderInterface class from FEITIAN SDK Framework
+// These methods are provided by the SDK's native implementation
 @objc class ReaderInterface: NSObject {
     func setDelegate(_ delegate: ReaderInterfaceDelegate?)
     func setAutoPair(_ autoPair: Bool)
@@ -143,8 +146,10 @@ class FeitianCardManager: NSObject {
         sendLog("Starte Bluetooth-Scan über ReaderInterface...")
         isScanning = true
         
-        // Scan is automatically handled by ReaderInterface SDK
-        // Events come via delegate
+        // Bluetooth scanning is automatically handled by the ReaderInterface SDK
+        // when setDelegate is called during initialization. The SDK continuously
+        // scans for FEITIAN devices and calls findPeripheralReader() for each
+        // device discovered. No explicit scan start is needed.
     }
     
     func stopBluetoothScan() {
@@ -683,9 +688,11 @@ extension FeitianCardManager: ReaderInterfaceDelegate {
         sendLog("Gerät gefunden: \(readerName)")
         
         // Notify Flutter
+        // Note: RSSI (signal strength) is not available through the ReaderInterface API
+        // The SDK only provides device name. Setting rssi to 0 as a placeholder.
         channel?.invokeMethod("deviceFound", arguments: [
             "name": readerName,
-            "rssi": 0 // RSSI not available via ReaderInterface
+            "rssi": 0
         ])
     }
     

@@ -14,7 +14,7 @@ The previous implementation used `CBCentralManagerDelegate` for direct Bluetooth
 
 ## Solution
 
-The implementation now uses the FEITIAN SDK's `ReaderInterface` class, following the pattern from the IReaderDemo project (`sdk/3.5.71/demo/iReader/Classes/ScanDevice/Controller/ScanDeviceController.mm`).
+The implementation now uses the FEITIAN SDK's `ReaderInterface` class, following the pattern from the IReaderDemo project (`sdk/3.5.71/demo/iReader/Classes/ScanDevice/Controller/ScanDeviceController.mm`). The demo is written in Objective-C++, but the pattern has been adapted to Swift with proper Objective-C bridging.
 
 ## Key Changes
 
@@ -66,10 +66,14 @@ func startBluetoothScan() {
     sendLog("Starte Bluetooth-Scan über ReaderInterface...")
     isScanning = true
     
-    // Scan is automatically handled by ReaderInterface SDK
-    // Events come via delegate
+    // Bluetooth scanning is automatically handled by the ReaderInterface SDK
+    // when setDelegate is called during initialization. The SDK continuously
+    // scans for FEITIAN devices and calls findPeripheralReader() for each
+    // device discovered. No explicit scan start is needed.
 }
 ```
+
+**How Scanning Works**: Unlike CoreBluetooth which requires explicit `scanForPeripherals()` calls, the FEITIAN SDK's `ReaderInterface` automatically starts scanning for FEITIAN devices as soon as `setDelegate()` is called during initialization. The SDK runs a continuous background scan and invokes the `findPeripheralReader()` delegate method whenever a FEITIAN device is discovered. The `startBluetoothScan()` method now serves primarily as a state flag.
 
 ### 4. Reader Connection
 
@@ -106,12 +110,17 @@ Called when a new FEITIAN device is discovered:
 func findPeripheralReader(_ readerName: String) {
     sendLog("Gerät gefunden: \(readerName)")
     
+    // Notify Flutter
+    // Note: RSSI (signal strength) is not available through the ReaderInterface API
+    // The SDK only provides device name. Setting rssi to 0 as a placeholder.
     channel?.invokeMethod("deviceFound", arguments: [
         "name": readerName,
-        "rssi": 0 // RSSI not available via ReaderInterface
+        "rssi": 0
     ])
 }
 ```
+
+**Note on RSSI**: The FEITIAN SDK's `ReaderInterface` API does not provide RSSI (Received Signal Strength Indicator) values. Unlike the previous CoreBluetooth implementation that could access signal strength, the SDK abstraction only provides the device name. The `rssi` field is set to 0 as a placeholder to maintain API compatibility with the Flutter layer. This should not affect functionality since device selection is typically based on name rather than signal strength for FEITIAN readers.
 
 #### readerInterfaceDidChange
 Called when reader is connected/disconnected:
