@@ -64,8 +64,7 @@ public class FeitianReaderSdkPlugin: NSObject, FlutterPlugin {
         
     // Legacy Methods (kept for backwards compatibility)
     case "connectReader":
-        // Legacy method - just log
-        result("Use startBluetoothScan and connectToReader instead")
+       FeitianCardManager.shared.startBluetoothScan()
         
     case "sendApduCommand":
         result("APDU commands are handled internally during EGK reading")

@@ -14,26 +14,22 @@ Plugin for Flutter for using FEITIAN cardreader over bluetooth with PCSC interfa
   s.author           = { 'CKS Systeme GmbH' => 'https://www.johnsoncontrols.de/cks' }
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
+  s.public_header_files = 'Classes/**/*.h'
   s.dependency 'Flutter'
   s.platform = :ios, '12.0'
 
   # Flutter.framework does not contain a i386 slice.
   s.pod_target_xcconfig = { 
     'DEFINES_MODULE' => 'YES', 
-    'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386',
-    'HEADER_SEARCH_PATHS' => '"$(PODS_TARGET_SRCROOT)/../sdk/include"',
-    'LIBRARY_SEARCH_PATHS' => '"$(PODS_TARGET_SRCROOT)/../sdk/lib/Release/$(PLATFORM_NAME)"'
-    # REMOVED: SWIFT_INCLUDE_PATHS and OTHER_SWIFT_FLAGS
+    'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386'
   }
   s.swift_version = '5.0'
 
   # FEITIAN SDK integration
-  s.preserve_paths = "../sdk/**/*"
+  s.preserve_paths = "sdk/**/*"
   
-  # Directly vendor the static libraries - this is more reliable than xcconfig
-  s.vendored_libraries = [
-    "../sdk/lib/Release/iphoneos/libiRockey301_ccid.a"
-  ]
+  # Directly vendor the static libraries - WITH WILDCARD for all .a files
+  s.vendored_libraries = "sdk/libiRockey301_ccid.a"
   
   s.libraries = ['c++', 'z']
   s.frameworks = ['CoreBluetooth', 'Foundation', 'ExternalAccessory', 'CryptoTokenKit']
