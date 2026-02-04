@@ -119,8 +119,14 @@ class FeitianCardManager: NSObject {
     private var connectedReaderName: String?
     private var isScanning = false
     
-    // Discovered devices list for deduplication (like in demo)
-    private var discoveredDevices: [String] = []
+    // Discovered devices lists for deduplication (like in demo)
+    // _discoverdList: devices discovered by CBCentralManager in didDiscoverPeripheral
+    // _deviceList: devices reported by SDK in findPeripheralReader
+    private var cbDiscoveredDevices: [String] = []  // Like _discoverdList in demo
+    private var sdkReportedDevices: [String] = []   // Like _deviceList in demo
+    
+    // Serial queue for thread-safe access to device lists
+    private let deviceListQueue = DispatchQueue(label: "com.feitian.devicelist", attributes: [])
     
     // EGK Card data
     private var cardGeneration: String = ""
@@ -197,8 +203,11 @@ class FeitianCardManager: NSObject {
             sendLog("CBCentralManager gestoppt")
         }
         
-        // Clear discovered devices list
-        discoveredDevices.removeAll()
+        // Clear discovered devices lists (thread-safe)
+        deviceListQueue.sync {
+            cbDiscoveredDevices.removeAll()
+            sdkReportedDevices.removeAll()
+        }
         
         sendLog("Bluetooth-Scan gestoppt")
     }
@@ -722,15 +731,26 @@ private func mapErrorCode(_ errorCode: Int32) -> String {
 extension FeitianCardManager: ReaderInterfaceDelegate {
     
     func findPeripheralReader(_ readerName: String) {
-        // Check if device already discovered (like in demo)
-        if discoveredDevices.contains(readerName) {
+        // This is called by the SDK when it validates a device (like in demo line 301-316)
+        // Use _deviceList (sdkReportedDevices) for deduplication, separate from CBCentralManager list
+        
+        guard !readerName.isEmpty else {
             return
         }
         
-        // Add to discovered devices list
-        discoveredDevices.append(readerName)
+        var shouldNotify = false
+        deviceListQueue.sync {
+            if !sdkReportedDevices.contains(readerName) {
+                sdkReportedDevices.append(readerName)
+                shouldNotify = true
+            }
+        }
         
-        sendLog("Gerät gefunden: \(readerName)")
+        guard shouldNotify else {
+            return
+        }
+        
+        sendLog("SDK reported device: \(readerName)")
         
         // Notify Flutter
         // Note: RSSI (signal strength) is not available through the ReaderInterface API
@@ -855,7 +875,7 @@ extension FeitianCardManager: CBCentralManagerDelegate {
     }
     
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String : Any], rssi RSSI: NSNumber) {
-        // Validate FEITIAN device by advertisement data (like in demo)
+        // Validate FEITIAN device by advertisement data (like in demo line 133-154)
         guard checkFTBLEDeviceByAdv(advertisementData) else {
             return
         }
@@ -865,18 +885,23 @@ extension FeitianCardManager: CBCentralManagerDelegate {
             return
         }
         
-        // Check for duplicates (like in demo)
-        if discoveredDevices.contains(deviceName) {
-            return
+        // Check for duplicates in cbDiscoveredDevices (like _discoverdList in demo)
+        // Use thread-safe access
+        var isNewDevice = false
+        deviceListQueue.sync {
+            if !cbDiscoveredDevices.contains(deviceName) {
+                cbDiscoveredDevices.append(deviceName)
+                isNewDevice = true
+            }
         }
         
-        // Add to discovered devices
-        discoveredDevices.append(deviceName)
+        if isNewDevice {
+            sendLog("didDiscoverPeripheral: \(deviceName) (RSSI: \(RSSI))")
+        }
         
-        sendLog("didDiscoverPeripheral: \(deviceName) (RSSI: \(RSSI))")
-        
-        // The ReaderInterface SDK will call findPeripheralReader() when it validates this device
-        // We just log it here for debugging
+        // Note: The CBCentralManager discovers devices, but the ReaderInterface SDK
+        // independently validates and reports devices via findPeripheralReader()
+        // We maintain separate lists for each to match the demo behavior
     }
     
     // MARK: - FEITIAN Device Validation (from demo ScanDeviceController.mm)
