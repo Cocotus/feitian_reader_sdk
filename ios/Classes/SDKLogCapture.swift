@@ -6,7 +6,10 @@ import Foundation
 class SDKLogCapture {
     private static var logCallback: ((String) -> Void)?
     
-    // Pipe für stderr/stdout Umleitung
+    // Buffer size for reading log output
+    private static let bufferSize = 4096
+    
+    // Pipe for stderr/stdout redirection
     private static var logPipe: [Int32] = [0, 0]
     private static var originalStderr: Int32 = 0
     private static var originalStdout: Int32 = 0
@@ -22,22 +25,22 @@ class SDKLogCapture {
     
     /// Creates pipe for capturing stdout/stderr and sets up continuous reading
     private static func setupPipeCapture() {
-        // Erstelle Pipe für stdout/stderr
+        // Create pipe for stdout/stderr
         if pipe(&logPipe) == 0 {
             originalStderr = dup(STDERR_FILENO)
             originalStdout = dup(STDOUT_FILENO)
             
-            // Umleitung
+            // Redirect stderr/stdout to pipe
             dup2(logPipe[1], STDERR_FILENO)
             dup2(logPipe[1], STDOUT_FILENO)
             
-            // Dispatch Source für kontinuierliches Lesen
+            // Dispatch source for continuous reading
             logDispatchSource = DispatchSource.makeReadSource(fileDescriptor: logPipe[0], queue: .global())
             logDispatchSource?.setEventHandler {
-                let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 4096)
+                let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
                 defer { buffer.deallocate() }
                 
-                let bytes = read(logPipe[0], buffer, 4096)
+                let bytes = read(logPipe[0], buffer, bufferSize)
                 if bytes > 0 {
                     let data = Data(bytes: buffer, count: bytes)
                     if let message = String(data: data, encoding: .utf8) {
@@ -49,9 +52,12 @@ class SDKLogCapture {
         }
     }
     
-    /// Simulates the "start-----readerStatusThread" message that SDK produces internally
+    /// Simulates the "start-----readerStatusThread" message that SDK produces internally.
+    /// Note: The SDK's native ReaderStatusThread is started internally when SCardEstablishContext
+    /// is called, but those logs may not be immediately captured by the pipe redirection due to
+    /// timing. This explicit message ensures the thread start is always logged for debugging.
     private static func simulateReaderStatusThreadMessage() {
-        // Explizites Logging der readerStatusThread Meldung
+        // Explicit logging of the readerStatusThread message
         let timestamp = Date()
         let formatter = DateFormatter()
         formatter.timeStyle = .medium
