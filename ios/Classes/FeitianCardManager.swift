@@ -153,8 +153,13 @@ class FeitianCardManager: NSObject {
     // MARK: - Bluetooth Scanning (via ReaderInterface SDK)
     
     func startBluetoothScan() {
-        sendLog("Starte Bluetooth-Scan über ReaderInterface...")
+        sendLog("=== START BLUETOOTH SCAN ===")
         isScanning = true
+        
+        // Setup SDK Log Capturing
+        SDKLogCapture.setupLogging { sdkLog in
+            self.sendLog("SDK: \(sdkLog)")
+        }
         
         // Establish PCSC context (like in demo ScanDeviceController.mm)
         if scardContext == 0 {
@@ -190,11 +195,15 @@ class FeitianCardManager: NSObject {
         centralManager = CBCentralManager(delegate: self, queue: centralQueue)
         
         sendLog("Bluetooth-Scan initialisiert")
+        sendLog("=== END INITIALIZATION ===")
     }
     
     func stopBluetoothScan() {
         sendLog("Stoppe Bluetooth-Scan...")
         isScanning = false
+        
+        // Stop Log Capturing
+        SDKLogCapture.stopLogging()
         
         // Stop CBCentralManager (like in demo)
         if let central = centralManager {
