@@ -1,6 +1,5 @@
 import Flutter
 import UIKit
-import CoreBluetooth
 import Compression
 
 // Import zlib functions
@@ -70,6 +69,35 @@ func FtSetTimeout(_ hContext: SCARDCONTEXT, _ timeout: UInt32) -> Int32
 @_silgen_name("FtGetDevVer")
 func FtGetDevVer(_ hContext: SCARDCONTEXT, _ firmwareRevision: UnsafeMutablePointer<CChar>, _ hardwareRevision: UnsafeMutablePointer<CChar>) -> Int32
 
+// MARK: - ReaderInterface Protocol Bridge (from FEITIAN SDK)
+// These classes are implemented in the FEITIAN SDK framework (libiRockey301_ccid.a)
+// and are bridged here for Swift interoperability
+@objc protocol ReaderInterfaceDelegate: AnyObject {
+    @objc optional func findPeripheralReader(_ readerName: String)
+    @objc optional func readerInterfaceDidChange(_ attached: Bool, bluetoothID: String, andslotnameArray slotArray: [String])
+    @objc optional func cardInterfaceDidDetach(_ attached: Bool, slotname: String)
+    @objc optional func didGetBattery(_ battery: Int)
+}
+
+// ReaderInterface class from FEITIAN SDK Framework
+// These methods are provided by the SDK's native implementation
+@objc class ReaderInterface: NSObject {
+    func setDelegate(_ delegate: ReaderInterfaceDelegate?)
+    func setAutoPair(_ autoPair: Bool)
+    func connectPeripheralReader(_ readerName: String, timeout: Float) -> Bool
+    func disConnectCurrentPeripheralReader()
+}
+
+// FTDeviceType class from FEITIAN SDK
+@objc class FTDeviceType: NSObject {
+    @objc static func setDeviceType(_ type: UInt32)
+}
+
+// Device type constants from SDK
+let IR301_AND_BR301: UInt32 = 0x01
+let BR301BLE_AND_BR500: UInt32 = 0x02
+let LINE_TYPEC: UInt32 = 0x04
+
 // MARK: - FeitianCardManager
 class FeitianCardManager: NSObject {
     static let shared = FeitianCardManager()
@@ -79,14 +107,13 @@ class FeitianCardManager: NSObject {
     private var scardHandle: SCARDHANDLE = 0
     private var activeProtocol: UInt32 = 0
     
-    // Bluetooth scanning
-    private var centralManager: CBCentralManager?
-    private var discoveredPeripherals: [String: CBPeripheral] = [:]
-    private var isScanning = false
+    // ReaderInterface from FEITIAN SDK
+    private var readerInterface: ReaderInterface?
     
     // Reader state
     private var isReaderConnected = false
     private var connectedReaderName: String?
+    private var isScanning = false
     
     // EGK Card data
     private var cardGeneration: String = ""
@@ -95,6 +122,16 @@ class FeitianCardManager: NSObject {
     
     private override init() {
         super.init()
+        setupReaderInterface()
+    }
+    
+    private func setupReaderInterface() {
+        readerInterface = ReaderInterface()
+        readerInterface?.setDelegate(self)
+        readerInterface?.setAutoPair(false) // Manual pairing like in demo
+        
+        // Support all device types
+        FTDeviceType.setDeviceType(IR301_AND_BR301 | BR301BLE_AND_BR500 | LINE_TYPEC)
     }
     
     func initialize(channel: FlutterMethodChannel) {
@@ -103,22 +140,20 @@ class FeitianCardManager: NSObject {
  
     }
     
-    // MARK: - Bluetooth Scanning (CoreBluetooth)
+    // MARK: - Bluetooth Scanning (via ReaderInterface SDK)
     
     func startBluetoothScan() {
-        sendLog("Starte Bluetooth-Scan...")
-        
-        if centralManager == nil {
-            let queue = DispatchQueue(label: "com.feitian.ble", qos: .background)
-            centralManager = CBCentralManager(delegate: self, queue: queue)
-        }
-        
+        sendLog("Starte Bluetooth-Scan über ReaderInterface...")
         isScanning = true
+        
+        // Bluetooth scanning is automatically handled by the ReaderInterface SDK
+        // when setDelegate is called during initialization. The SDK continuously
+        // scans for FEITIAN devices and calls findPeripheralReader() for each
+        // device discovered. No explicit scan start is needed.
     }
     
     func stopBluetoothScan() {
         sendLog("Stoppe Bluetooth-Scan...")
-        centralManager?.stopScan()
         isScanning = false
         sendLog("Bluetooth-Scan gestoppt")
     }
@@ -128,26 +163,19 @@ class FeitianCardManager: NSObject {
     func connectToReader(deviceName: String) {
         sendLog("Verbinde mit Reader: \(deviceName)")
         
-        // Establish PCSC Context first
-        if scardContext == 0 {
-            establishContext()
+        guard let readerInterface = readerInterface else {
+            sendLog("ERROR: ReaderInterface nicht initialisiert")
+            return
         }
         
-        // Stop scanning
-        stopBluetoothScan()
+        // SDK connection with timeout (like in demo)
+        let success = readerInterface.connectPeripheralReader(deviceName, timeout: 15.0)
         
-        connectedReaderName = deviceName
-        isReaderConnected = true
-        
-        sendLog("Verbindung zu \(deviceName) wird hergestellt...")
-        
-        // Notify Flutter
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            self?.channel?.invokeMethod("readerConnected", arguments: [
-                "deviceName": deviceName,
-                "connected": true
-            ])
-            self?.sendLog("Reader verbunden: \(deviceName)")
+        if success {
+            connectedReaderName = deviceName
+            sendLog("Verbindung zu \(deviceName) wird hergestellt...")
+        } else {
+            sendLog("ERROR: Verbindung zu \(deviceName) fehlgeschlagen")
         }
     }
     
@@ -164,24 +192,13 @@ class FeitianCardManager: NSObject {
             scardContext = 0
         }
         
+        readerInterface?.disConnectCurrentPeripheralReader()
+        
         isReaderConnected = false
         connectedReaderName = nil
         
         sendLog("Reader getrennt")
         channel?.invokeMethod("readerDisconnected", arguments: nil)
-    }
-    
-    func getBatteryLevel() {
-        sendLog("Batteriestatus wird abgefragt...")
-        
-        // Simulate battery level (ReaderInterface would provide this via delegate)
-        let batteryLevel = 75
-        
-        channel?.invokeMethod("batteryLevel", arguments: [
-            "level": batteryLevel
-        ])
-        
-        sendLog("Batterie: \(batteryLevel)%")
     }
     
     // MARK: - PCSC Context
@@ -664,54 +681,87 @@ private func mapErrorCode(_ errorCode: Int32) -> String {
     }
 }
 
-// MARK: - CBCentralManagerDelegate
-extension FeitianCardManager: CBCentralManagerDelegate {
+// MARK: - ReaderInterfaceDelegate Implementation
+extension FeitianCardManager: ReaderInterfaceDelegate {
     
-    func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        switch central.state {
-        case .poweredOn:
-            sendLog("Bluetooth eingeschaltet")
-            if isScanning {
-                central.scanForPeripherals(withServices: nil, options: [
-                    CBCentralManagerScanOptionAllowDuplicatesKey: true
-                ])
-                sendLog("Bluetooth-Scan gestartet")
+    func findPeripheralReader(_ readerName: String) {
+        sendLog("Gerät gefunden: \(readerName)")
+        
+        // Notify Flutter
+        // Note: RSSI (signal strength) is not available through the ReaderInterface API
+        // The SDK only provides device name. Setting rssi to 0 as a placeholder.
+        channel?.invokeMethod("deviceFound", arguments: [
+            "name": readerName,
+            "rssi": 0
+        ])
+    }
+    
+    func readerInterfaceDidChange(_ attached: Bool, bluetoothID: String, andslotnameArray slotArray: [String]) {
+        if attached {
+            sendLog("Reader verbunden: \(bluetoothID)")
+            sendLog("Verfügbare Slots: \(slotArray)")
+            
+            isReaderConnected = true
+            connectedReaderName = bluetoothID
+            
+            // Establish PCSC context
+            if scardContext == 0 {
+                establishContext()
             }
             
-        case .poweredOff:
-            sendLog("Bluetooth ausgeschaltet")
+            // Notify Flutter
+            channel?.invokeMethod("readerConnected", arguments: [
+                "deviceName": bluetoothID,
+                "connected": true,
+                "slots": slotArray
+            ])
             
-        case .unauthorized:
-            sendLog("Bluetooth nicht autorisiert")
+        } else {
+            sendLog("Reader getrennt")
             
-        case .unsupported:
-            sendLog("Bluetooth nicht unterstützt")
+            isReaderConnected = false
             
-        default:
-            sendLog("Bluetooth Status: \(central.state.rawValue)")
+            // Cleanup
+            if scardHandle != 0 {
+                SCardDisconnect(scardHandle, SCARD_LEAVE_CARD)
+                scardHandle = 0
+            }
+            
+            if scardContext != 0 {
+                SCardReleaseContext(scardContext)
+                scardContext = 0
+            }
+            
+            // Notify Flutter
+            channel?.invokeMethod("readerDisconnected", arguments: nil)
         }
     }
     
-    func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, 
-                       advertisementData: [String : Any], rssi RSSI: NSNumber) {
+    func cardInterfaceDidDetach(_ attached: Bool, slotname: String) {
+        if attached {
+            sendLog("Karte erkannt in Slot: \(slotname)")
+            
+            channel?.invokeMethod("cardConnected", arguments: [
+                "slot": slotname
+            ])
+            
+        } else {
+            sendLog("Karte entfernt aus Slot: \(slotname)")
+            
+            if scardHandle != 0 {
+                SCardDisconnect(scardHandle, SCARD_LEAVE_CARD)
+                scardHandle = 0
+            }
+            
+            channel?.invokeMethod("cardDisconnected", arguments: nil)
+        }
+    }
+    
+    func didGetBattery(_ battery: Int) {
+        sendLog("Batterie: \(battery)%")
         
-        guard let name = peripheral.name, !name.isEmpty else { return }
-        
-        // Filter FEITIAN devices
-        let isFeitianDevice = name.contains("bR301") || name.contains("bR500") || 
-                              name.contains("iR301") || name.contains("FEITIAN")
-        
-        guard isFeitianDevice else { return }
-        
-        // Store peripheral
-        discoveredPeripherals[name] = peripheral
-        
-        // Notify Flutter
-        channel?.invokeMethod("deviceFound", arguments: [
-            "name": name,
-            "rssi": RSSI.intValue
+        channel?.invokeMethod("batteryLevel", arguments: [
+            "level": battery
         ])
-        
-        sendLog("Gefunden: \(name) (RSSI: \(RSSI))")
     }
 }
