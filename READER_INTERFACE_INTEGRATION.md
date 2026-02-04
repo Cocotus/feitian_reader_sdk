@@ -1,5 +1,25 @@
 # ReaderInterface Integration for FEITIAN SDK
 
+## Recent Update: Moved SDK Initialization to startBluetoothScan()
+
+**Date**: February 2026
+
+To match the FEITIAN demo project behavior, SDK initialization has been moved from `init()` to `startBluetoothScan()`. This ensures SDK logs appear when the user actively starts scanning, not during app initialization.
+
+### Changes Made:
+- ✅ Removed SDK initialization from `setupReaderInterface()` (only creates ReaderInterface and sets delegate)
+- ✅ Moved `SCardEstablishContext()` and `FtSetTimeout()` to `startBluetoothScan()`
+- ✅ Moved `setAutoPair()` and `FTDeviceType.setDeviceType()` to `startBluetoothScan()`
+- ✅ Added `CBCentralManager` initialization in `startBluetoothScan()`
+- ✅ Added proper cleanup in `stopBluetoothScan()`
+- ✅ Removed `establishContext()` method
+- ✅ Added `CBCentralManagerDelegate` implementation
+
+### Result:
+SDK logs like "Set time out success" and "No smart card reader found!" now appear when `startBluetoothScan()` is called (when user clicks "Connect"), not at app start.
+
+---
+
 ## Overview
 
 This document describes the integration of the FEITIAN SDK's `ReaderInterface` class to replace the previous CoreBluetooth-based implementation for proper Bluetooth device detection and event handling.
@@ -44,36 +64,97 @@ Added Objective-C protocol bridge declarations for the FEITIAN SDK classes:
 
 ### 2. Initialization
 
-Added `setupReaderInterface()` method called during initialization:
+Added `setupReaderInterface()` method called during initialization. **As of the latest update, this method now only performs basic setup without any SDK initialization**:
 
 ```swift
 private func setupReaderInterface() {
+    // Only basic initialization - NO scanning or SDK context setup
     readerInterface = ReaderInterface()
     readerInterface?.setDelegate(self)
-    readerInterface?.setAutoPair(false) // Manual pairing like in demo
-    
-    // Support all device types
-    FTDeviceType.setDeviceType(IR301_AND_BR301 | BR301BLE_AND_BR500 | LINE_TYPEC)
 }
 ```
 
+**Important**: The SDK initialization (PCSC context, timeout, device types, auto-pairing) has been moved from `setupReaderInterface()` to `startBluetoothScan()` to match the pattern used in the FEITIAN demo project (`ScanDeviceController.mm`). This ensures SDK logs appear when the user actively starts scanning, not during app initialization.
+
 ### 3. Bluetooth Scanning
 
-Simplified Bluetooth scanning to use the SDK's built-in functionality:
+The scanning logic has been updated to follow the FEITIAN demo project pattern. All SDK initialization now happens in `startBluetoothScan()`:
 
 ```swift
 func startBluetoothScan() {
     sendLog("Starte Bluetooth-Scan über ReaderInterface...")
     isScanning = true
     
-    // Bluetooth scanning is automatically handled by the ReaderInterface SDK
-    // when setDelegate is called during initialization. The SDK continuously
-    // scans for FEITIAN devices and calls findPeripheralReader() for each
-    // device discovered. No explicit scan start is needed.
+    // Establish PCSC context (like in demo ScanDeviceController.mm)
+    if scardContext == 0 {
+        sendLog("Erstelle PCSC Context...")
+        var context: SCARDCONTEXT = 0
+        let ret = SCardEstablishContext(SCARD_SCOPE_SYSTEM, nil, nil, &context)
+        
+        if ret == SCARD_S_SUCCESS {
+            scardContext = context
+            sendLog("PCSC Context erstellt: \(context)")
+            
+            // Set timeout like in demo (50 seconds)
+            let timeoutRet = FtSetTimeout(scardContext, 50000)
+            if timeoutRet == SCARD_S_SUCCESS {
+                sendLog("Set time out success")
+            } else {
+                sendLog("Set timeout error: \(mapErrorCode(timeoutRet))")
+            }
+        } else {
+            sendLog("Fehler beim Erstellen des PCSC Context: \(mapErrorCode(ret))")
+            return
+        }
+    }
+    
+    // Set auto pairing (must be called after context establishment, like in demo)
+    readerInterface?.setAutoPair(false)
+    
+    // Support all device types
+    FTDeviceType.setDeviceType(IR301_AND_BR301 | BR301BLE_AND_BR500 | LINE_TYPEC)
+    
+    // Initialize CBCentralManager with serial dispatch queue (like in demo)
+    let centralQueue = DispatchQueue(label: "com.feitian.central", attributes: [])
+    centralManager = CBCentralManager(delegate: self, queue: centralQueue)
+    
+    sendLog("Bluetooth-Scan initialisiert")
+}
+
+func stopBluetoothScan() {
+    sendLog("Stoppe Bluetooth-Scan...")
+    isScanning = false
+    
+    // Stop CBCentralManager (like in demo)
+    if let central = centralManager {
+        central.stopScan()
+        centralManager = nil
+        sendLog("CBCentralManager gestoppt")
+    }
+    
+    sendLog("Bluetooth-Scan gestoppt")
 }
 ```
 
-**How Scanning Works**: Unlike CoreBluetooth which requires explicit `scanForPeripherals()` calls, the FEITIAN SDK's `ReaderInterface` automatically starts scanning for FEITIAN devices as soon as `setDelegate()` is called during initialization. The SDK runs a continuous background scan and invokes the `findPeripheralReader()` delegate method whenever a FEITIAN device is discovered. The `startBluetoothScan()` method now serves primarily as a state flag.
+**How Scanning Works**: Following the FEITIAN demo project (`ScanDeviceController.mm`):
+
+1. **On `startBluetoothScan()`**:
+   - Creates PCSC context with `SCardEstablishContext()`
+   - Sets timeout with `FtSetTimeout(50000)`
+   - Configures auto-pairing and device types
+   - Initializes `CBCentralManager` with a serial dispatch queue
+   - When Bluetooth is powered on, `CBCentralManagerDelegate` triggers peripheral scanning
+
+2. **Device Discovery**:
+   - The FEITIAN SDK's `ReaderInterface` runs continuous background scanning
+   - When FEITIAN devices are discovered, the SDK invokes `findPeripheralReader()` delegate method
+   - `CBCentralManager` also discovers peripherals via `didDiscover peripheral` (mainly for logging)
+
+3. **On `stopBluetoothScan()`**:
+   - Stops `CBCentralManager` scanning
+   - Cleans up `centralManager` reference
+
+This approach ensures SDK logs (like "Set time out success", "No smart card reader found!" etc.) appear when the user clicks "Connect" and calls `startBluetoothScan()`, not during app initialization.
 
 ### 4. Reader Connection
 
@@ -133,9 +214,10 @@ func readerInterfaceDidChange(_ attached: Bool, bluetoothID: String, andslotname
         isReaderConnected = true
         connectedReaderName = bluetoothID
         
-        // Establish PCSC context
+        // Note: PCSC context should already be established in startBluetoothScan()
+        // This is just a safety check
         if scardContext == 0 {
-            establishContext()
+            sendLog("WARNUNG: PCSC Context noch nicht erstellt - bitte startBluetoothScan() aufrufen")
         }
         
         // Notify Flutter
@@ -149,6 +231,8 @@ func readerInterfaceDidChange(_ attached: Bool, bluetoothID: String, andslotname
     }
 }
 ```
+
+**Important**: The PCSC context establishment has been moved to `startBluetoothScan()`. This delegate method now only checks if the context exists and logs a warning if it doesn't, ensuring proper initialization order.
 
 #### cardInterfaceDidDetach
 Called when card is inserted/removed:
