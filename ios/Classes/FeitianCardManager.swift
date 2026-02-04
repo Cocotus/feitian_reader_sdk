@@ -126,7 +126,7 @@ class FeitianCardManager: NSObject {
     private var sdkReportedDevices: [String] = []   // Like _deviceList in demo
     
     // Serial queue for thread-safe access to device lists
-    private let deviceListQueue = DispatchQueue(label: "com.feitian.devicelist", attributes: [])
+    private let deviceListQueue = DispatchQueue(label: "com.feitian.devicelist")
     
     // EGK Card data
     private var cardGeneration: String = ""
@@ -920,10 +920,10 @@ extension FeitianCardManager: CBCentralManagerDelegate {
         
         // Validate FEITIAN device by UUID
         var uuidType: Int = 0
-        let isFTDevice = checkFTBLEDeviceByUUID(serviceUUID.data, uuidType: &uuidType)
+        let isFeitianDevice = checkFTBLEDeviceByUUID(serviceUUID.data, uuidType: &uuidType)
         
         // Only accept type 1 devices (from demo line 170-172)
-        if isFTDevice && uuidType == 1 {
+        if isFeitianDevice && uuidType == 1 {
             return true
         }
         
