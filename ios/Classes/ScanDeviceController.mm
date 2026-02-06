@@ -237,7 +237,7 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
     // Step 2: Get ATR (Answer To Reset)
     unsigned char patr[33] = {0};
     DWORD atrLen = sizeof(patr);
-    ret = SCardGetAttrib(gCardHandle, NULL, patr, &atrLen);
+    ret = SCardGetAttrib(gCardHandle, 0, patr, &atrLen);
     if (ret != SCARD_S_SUCCESS) {
         [self logMessage:[NSString stringWithFormat:@"SCardGetAttrib warning: 0x%08lx", ret]];
     }
@@ -782,9 +782,10 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
             [_delegate scanController:self didDetectCard:safeSlotName];
         }
         
-        // ✅ FEATURE: Automatically read EGK card on insertion
-        [self logMessage:@"Automatically triggering EGK card read"];
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        // ✅ FEATURE: Automatically read EGK card on insertion with debounce
+        // Add a small delay to avoid race conditions with rapid card insertions
+        [self logMessage:@"Automatically triggering EGK card read in 0.5s..."];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
             [self readEGKCard];
         });
     } else {

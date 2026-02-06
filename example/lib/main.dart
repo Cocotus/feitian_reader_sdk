@@ -193,6 +193,16 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
+  Widget _buildDataRow(String label, dynamic value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Text(
+        '$label: $value',
+        style: const TextStyle(fontSize: 12),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -290,12 +300,19 @@ class _MyAppState extends State<MyApp> {
                           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                         ),
                         const Divider(),
-                        ..._egkData!.entries.where((e) => e.key != 'event').map((e) => 
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 2),
-                            child: Text('${e.key}: ${e.value}', style: const TextStyle(fontSize: 12)),
-                          )
-                        ),
+                        // Display only relevant EGK data fields, not internal metadata
+                        if (_egkData!.containsKey('atr'))
+                          _buildDataRow('ATR', _egkData!['atr']),
+                        if (_egkData!.containsKey('cardType'))
+                          _buildDataRow('Card Type', _egkData!['cardType']),
+                        if (_egkData!.containsKey('patientName'))
+                          _buildDataRow('Patient Name', _egkData!['patientName']),
+                        if (_egkData!.containsKey('insuranceNumber'))
+                          _buildDataRow('Insurance Number', _egkData!['insuranceNumber']),
+                        if (_egkData!.containsKey('insuranceCompany'))
+                          _buildDataRow('Insurance Company', _egkData!['insuranceCompany']),
+                        if (_egkData!.containsKey('placeholder'))
+                          _buildDataRow('Placeholder', _egkData!['placeholder']),
                       ],
                     ),
                   ),
