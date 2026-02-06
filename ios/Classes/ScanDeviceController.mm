@@ -254,13 +254,13 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
     });
 }
 
-- (void)sendApduCommands:(NSArray<NSString *> *)apduCommands 
+- (void)sendApduCommands:(NSArray<NSString *> *)apduCommands
           withCompletion:(void (^)(NSArray<NSString *> *responses, NSError *error))completion {
     
     if (!apduCommands || apduCommands.count == 0) {
         if (completion) {
-            completion(nil, [NSError errorWithDomain:@"FeitianReaderSDK" 
-                                                code:-1 
+            completion(nil, [NSError errorWithDomain:@"FeitianReaderSDK"
+                                                code:-1
                                             userInfo:@{NSLocalizedDescriptionKey: @"No APDU commands provided"}]);
         }
         return;
@@ -268,8 +268,8 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
     
     if (gCardHandle == 0) {
         if (completion) {
-            completion(nil, [NSError errorWithDomain:@"FeitianReaderSDK" 
-                                                code:-2 
+            completion(nil, [NSError errorWithDomain:@"FeitianReaderSDK"
+                                                code:-2
                                             userInfo:@{NSLocalizedDescriptionKey: @"No card connected"}]);
         }
         return;
@@ -285,8 +285,8 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
             // Convert hex string to bytes
             NSData *apduData = [self hexStringToData:apduString];
             if (!apduData) {
-                error = [NSError errorWithDomain:@"FeitianReaderSDK" 
-                                            code:-3 
+                error = [NSError errorWithDomain:@"FeitianReaderSDK"
+                                            code:-3
                                         userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Failed to parse APDU: %@", apduString]}];
                 break;
             }
@@ -298,7 +298,7 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
             memset(resp, 0, sizeof(resp));
             unsigned int resplen = sizeof(resp);
             
-            [self logMessage:[NSString stringWithFormat:@"Sending APDU [%lu/%lu]: %@", 
+            [self logMessage:[NSString stringWithFormat:@"Sending APDU [%lu/%lu]: %@",
                              (unsigned long)([apduCommands indexOfObject:apduString] + 1),
                              (unsigned long)apduCommands.count,
                              apduString]];
@@ -308,8 +308,8 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
             LONG ret = SCardTransmit(gCardHandle, &pioSendPci, capdu, capdulen, NULL, resp, &resplen);
             
             if (ret != SCARD_S_SUCCESS) {
-                error = [NSError errorWithDomain:@"FeitianReaderSDK" 
-                                            code:ret 
+                error = [NSError errorWithDomain:@"FeitianReaderSDK"
+                                            code:ret
                                         userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"APDU failed: 0x%08lx", ret]}];
                 break;
             }
@@ -321,7 +321,7 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
             }
             
             [responses addObject:responseHex];
-            [self logMessage:[NSString stringWithFormat:@"Response [%lu/%lu]: %@", 
+            [self logMessage:[NSString stringWithFormat:@"Response [%lu/%lu]: %@",
                              (unsigned long)responses.count,
                              (unsigned long)apduCommands.count,
                              responseHex]];
@@ -574,9 +574,9 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
     }
 }
 
-- (void)centralManager:(CBCentralManager *)central 
- didDiscoverPeripheral:(CBPeripheral *)peripheral 
-     advertisementData:(NSDictionary<NSString *, id> *)advertisementData 
+- (void)centralManager:(CBCentralManager *)central
+ didDiscoverPeripheral:(CBPeripheral *)peripheral
+     advertisementData:(NSDictionary<NSString *, id> *)advertisementData
                   RSSI:(NSNumber *)RSSI {
     
     NSString *deviceName = peripheral.name;
@@ -611,8 +611,8 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
 
 #pragma mark - ReaderInterfaceDelegate
 
-- (void)readerInterfaceDidChange:(BOOL)attached 
-                     bluetoothID:(NSString *)bluetoothID 
+- (void)readerInterfaceDidChange:(BOOL)attached
+                     bluetoothID:(NSString *)bluetoothID
                 andslotnameArray:(NSArray *)slotArray {
     
     [self logMessage:[NSString stringWithFormat:@"Reader interface changed, attached: %d", attached]];
@@ -623,7 +623,16 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
         
         gBluetoothID = bluetoothID;
         _slotarray = slotArray.count > 0 ? slotArray : nil;
-        _connectedReaderName = _selectedDeviceName;
+        
+        // ✅ FIX: Only set _connectedReaderName if _selectedDeviceName is valid
+        if (_selectedDeviceName && _selectedDeviceName.length > 0) {
+            _connectedReaderName = _selectedDeviceName;
+        } else {
+            // Fallback to bluetoothID if _selectedDeviceName is not set
+            // This happens when AutoPair connects automatically without explicit connectToReader call
+            _connectedReaderName = bluetoothID;
+            [self logMessage:@"⚠️ Warning: _selectedDeviceName was nil, using bluetoothID instead"];
+        }
         
         [self logMessage:@"✅ Reader connected successfully - WriteSerial command should have been sent"];
         
@@ -632,6 +641,11 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
             NSString *readerModelName = [self getReaderModelName];
             if (readerModelName) {
                 [self logMessage:[NSString stringWithFormat:@"Connected reader model: %@", readerModelName]];
+                
+                // Update _connectedReaderName with the actual model name if we got it
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    self.connectedReaderName = readerModelName;
+                });
             }
             
             // Wait for reader to be ready before requesting battery
@@ -645,10 +659,15 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
             [slotNames addObject:slot];
         }
         
-        [self logMessage:[NSString stringWithFormat:@"Connected to reader: %@", _selectedDeviceName]];
+        [self logMessage:[NSString stringWithFormat:@"Connected to reader: %@", _connectedReaderName]];
         
-        if ([_delegate respondsToSelector:@selector(scanController:didConnectReader:slots:)]) {
-            [_delegate scanController:self didConnectReader:_selectedDeviceName slots:slotNames];
+        // ✅ FIX: Only call delegate if we have a valid reader name
+        if (_connectedReaderName && _connectedReaderName.length > 0) {
+            if ([_delegate respondsToSelector:@selector(scanController:didConnectReader:slots:)]) {
+                [_delegate scanController:self didConnectReader:_connectedReaderName slots:slotNames];
+            }
+        } else {
+            [self notifyError:@"Failed to determine connected reader name"];
         }
     } else {
         // Handle disconnection
