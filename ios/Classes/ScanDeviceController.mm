@@ -251,7 +251,7 @@ static NSString *gBluetoothID = @"";
         return nil;
     }
     
-    LPSTR readers = (LPSTR)malloc(readerLength * sizeof(LPSTR));
+    LPSTR readers = (LPSTR)malloc(readerLength * sizeof(char));
     ret = SCardListReaders(gContxtHandle, nil, readers, &readerLength);
     if (ret != 0) {
         [self notifyError:[NSString stringWithFormat:@"Failed to list readers: 0x%08lx", ret]];
@@ -281,9 +281,10 @@ static NSString *gBluetoothID = @"";
 - (void)refreshDeviceList {
     // Remove devices that haven't been seen in the last second
     NSArray *tempList = [_discoveredList copy];
+    NSDate *now = [NSDate date];
     for (readerModel *model in tempList) {
         NSDate *lastSeen = model.date;
-        if ([[NSDate date] timeIntervalSinceDate:lastSeen] >= 1.0) {
+        if ([now timeIntervalSinceDate:lastSeen] >= 1.0) {
             [_deviceList removeObject:model.name];
             [_discoveredList removeObject:model];
         }

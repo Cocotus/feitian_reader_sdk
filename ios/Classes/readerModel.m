@@ -13,7 +13,7 @@
 {
     self = [super init];
     self.name = name;
-    self.date =date;
+    self.date = date;
     return self;
 }
 
