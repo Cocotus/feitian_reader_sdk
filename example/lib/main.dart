@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:feitian_reader_sdk/feitian_reader_sdk.dart';
+import 'package:xml/xml.dart';
 
 void main() {
   runApp(const MyApp());
@@ -35,14 +36,7 @@ class _MyAppState extends State<MyApp> {
     _setupEventStream();
     // Set default APDU command
     _apduController.text = '00A4040007A0000002471001';
-    // Auto-start Bluetooth scan on app launch
-    _autoStartScan();
-  }
-  
-  Future<void> _autoStartScan() async {
-    // Small delay to ensure UI is ready
-    await Future.delayed(const Duration(milliseconds: 500));
-    _startBluetoothScan();
+    // ❌ REMOVED: Auto-start Bluetooth scan on app launch
   }
 
   @override
@@ -50,6 +44,56 @@ class _MyAppState extends State<MyApp> {
     _apduController.dispose();
     _eventSubscription?.cancel();
     super.dispose();
+  }
+
+  final List<String> _nodesToDisplay = [
+    'geburtsdatum',
+    'vorname',
+    'nachname',
+    'geschlecht',
+    'titel',
+    'postleitzahl',
+    'ort',
+    'wohnsitzlaendercode',
+    'strasse',
+    'hausnummer',
+    'beginn',
+    'kostentraegerkennung',
+    'kostentraegerlaendercode',
+    'name',
+    'versichertenart',
+    'versicherten_id'
+  ];
+
+  List<Map<String, String>> _parseAndFilterXmlData(List<String> dataStrings) {
+    List<Map<String, String>> nodes = [];
+    for (var data in dataStrings) {
+      try {
+        final document = XmlDocument.parse(data);
+        final elements = document.findAllElements('*');
+        for (var element in elements) {
+          final nodeName = element.name.toString().toLowerCase();
+          if (_nodesToDisplay.contains(nodeName)) {
+            final nodeContent = element.innerText;
+            final formattedContent = _formatNodeContent(nodeName, nodeContent);
+            nodes.add({element.name.toString(): formattedContent});
+          }
+        }
+      } catch (e) {
+        _logs.insert(0, '⚠️ XML parsing error: $e');
+      }
+    }
+    return nodes;
+  }
+
+  String _formatNodeContent(String nodeName, String content) {
+    if ((nodeName == 'geburtsdatum' || nodeName == 'beginn') && content.length == 8) {
+      final year = content.substring(0, 4);
+      final month = content.substring(4, 6);
+      final day = content.substring(6, 8);
+      return '$day.$month.$year';
+    }
+    return content;
   }
 
   void _setupEventStream() {
@@ -88,6 +132,41 @@ class _MyAppState extends State<MyApp> {
           _logs.insert(0, '📤 APDU Response: ${event['response']}');
         } else if (eventType == 'error') {
           _logs.insert(0, '⚠️ ERROR: ${event['error']}');
+        } else if (eventType == 'data') {
+          final dataStrings = List<String>.from(event['data']);
+          final filteredDataNodes = _parseAndFilterXmlData(dataStrings);
+          _logs.addAll(filteredDataNodes.map((node) => '${node.keys.first}: ${node.values.first}'));
+        } else if (eventType == 'noDataMobileMode') {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('❌ Keine Karte eingesteckt!'),
+                backgroundColor: Colors.red,
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+        } else if (eventType == 'noBluetooth') {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('❌ Kartenleser nicht verbunden!'),
+                backgroundColor: Colors.orange,
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+        } else if (eventType == 'lowBattery') {
+          final battery = event['level'] as int;
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('🔋 Batterie niedrig: $battery%'),
+                backgroundColor: Colors.deepOrange,
+                duration: const Duration(seconds: 5),
+              ),
+            );
+          }
         }
       });
     });
@@ -157,12 +236,14 @@ class _MyAppState extends State<MyApp> {
   Future<void> _readEGKCard() async {
     try {
       setState(() {
-        _feedback = 'Reading EGK card...';
+        _feedback = 'Lese EGK-Karte...';
+        _logs.clear(); // Clear logs before reading
       });
-      await _feitianReaderPlugin.readEGKCard();
+      // Use readEGKCardOnDemand for complete workflow
+      await _feitianReaderPlugin.readEGKCardOnDemand();
     } catch (e) {
       setState(() {
-        _feedback = 'EGK read failed: $e';
+        _feedback = 'EGK-Lesevorgang fehlgeschlagen: $e';
       });
     }
   }
@@ -261,6 +342,19 @@ class _MyAppState extends State<MyApp> {
               
               // Main Action Buttons
               ElevatedButton.icon(
+                onPressed: !_isScanning && !_isConnected ? _startBluetoothScan : null,
+                icon: const Icon(Icons.bluetooth_searching),
+                label: const Text('Suche Kartenleser'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.all(16),
+                  disabledBackgroundColor: Colors.grey.shade300,
+                ),
+              ),
+              const SizedBox(height: 8),
+              
+              ElevatedButton.icon(
                 onPressed: _isConnected ? _disconnectReader : null,
                 icon: const Icon(Icons.bluetooth_disabled),
                 label: const Text('Trenne Kartenleser'),
@@ -276,7 +370,7 @@ class _MyAppState extends State<MyApp> {
               ElevatedButton.icon(
                 onPressed: _isConnected ? _readEGKCard : null,
                 icon: const Icon(Icons.credit_card),
-                label: const Text('Lese Karte'),
+                label: const Text('EGK Auslesen'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.green,
                   foregroundColor: Colors.white,

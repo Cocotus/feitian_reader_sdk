@@ -68,6 +68,12 @@ class MethodChannelFeitianReaderSdk extends FeitianReaderSdkPlatform {
   }
 
   @override
+  Future<String?> readEGKCardOnDemand() async {
+    final result = await methodChannel.invokeMethod<String>('readEGKCardOnDemand');
+    return result;
+  }
+
+  @override
   Future<String?> powerOnCard() async {
     final result = await methodChannel.invokeMethod<String>('powerOnCard');
     return result;

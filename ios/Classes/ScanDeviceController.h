@@ -26,6 +26,10 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)scanController:(id)controller didReadEGKData:(NSDictionary *)data;
 - (void)scanController:(id)controller didReceiveError:(NSString *)error;
 - (void)scanController:(id)controller didReceiveApduResponse:(NSString *)response;
+- (void)scanController:(id)controller didSendCardData:(NSArray<NSString *> *)data;
+- (void)scanControllerDidNotifyNoCard:(id)controller;
+- (void)scanControllerDidNotifyNoReader:(id)controller;
+- (void)scanController:(id)controller didReceiveLowBattery:(NSInteger)level;
 @end
 
 /**
@@ -47,6 +51,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)powerOnCard;
 - (void)powerOffCard;
 - (void)readEGKCard;
+- (void)readEGKCardOnDemand;
 
 /**
  * Get the connected reader's model name (e.g., "bR301", "iR301")

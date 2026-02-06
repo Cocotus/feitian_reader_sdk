@@ -59,6 +59,10 @@ abstract class FeitianReaderSdkPlatform extends PlatformInterface {
     throw UnimplementedError('readEGKCard() has not been implemented.');
   }
 
+  Future<String?> readEGKCardOnDemand() {
+    throw UnimplementedError('readEGKCardOnDemand() has not been implemented.');
+  }
+
   Future<String?> powerOnCard() {
     throw UnimplementedError('powerOnCard() has not been implemented.');
   }
