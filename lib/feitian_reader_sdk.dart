@@ -17,6 +17,10 @@ class FeitianReaderSdk {
     return FeitianReaderSdkPlatform.instance.sendApduCommand(apdu);
   }
 
+  Future<List<String>?> sendApduCommands(List<String> apdus) {
+    return FeitianReaderSdkPlatform.instance.sendApduCommands(apdus);
+  }
+
   Future<String?> readUID() {
     return FeitianReaderSdkPlatform.instance.readUID();
   }

@@ -85,13 +85,39 @@
         [self.scanController readEGKCard];
         result(@"EGK card reading initiated");
         
+    } else if ([@"sendApduCommand" isEqualToString:call.method]) {
+        NSString *apduCommand = call.arguments[@"apdu"];
+        if (apduCommand) {
+            [self.scanController sendApduCommand:apduCommand];
+            result(@"APDU command sent");
+        } else {
+            result([FlutterError errorWithCode:@"INVALID_ARGUMENT"
+                                       message:@"APDU command required"
+                                       details:nil]);
+        }
+        
+    } else if ([@"sendApduCommands" isEqualToString:call.method]) {
+        NSArray *apduCommands = call.arguments[@"apdus"];
+        if (apduCommands && [apduCommands isKindOfClass:[NSArray class]]) {
+            [self.scanController sendApduCommands:apduCommands withCompletion:^(NSArray<NSString *> *responses, NSError *error) {
+                if (error) {
+                    result([FlutterError errorWithCode:@"APDU_ERROR"
+                                               message:error.localizedDescription
+                                               details:nil]);
+                } else {
+                    result(responses);
+                }
+            }];
+        } else {
+            result([FlutterError errorWithCode:@"INVALID_ARGUMENT"
+                                       message:@"Array of APDU commands required"
+                                       details:nil]);
+        }
+        
     } else if ([@"connectReader" isEqualToString:call.method]) {
         // Legacy method - map to startBluetoothScan
         [self.scanController startScanning];
         result(@"Bluetooth scan started (legacy method)");
-        
-    } else if ([@"sendApduCommand" isEqualToString:call.method]) {
-        result(@"APDU commands are handled internally during EGK reading");
         
     } else if ([@"readUID" isEqualToString:call.method]) {
         result(@"UID reading not implemented in current version");
@@ -170,6 +196,14 @@
     NSDictionary *eventData = @{
         @"event": @"error",
         @"error": error
+    };
+    [self sendEventToFlutter:eventData];
+}
+
+- (void)scanController:(id)controller didReceiveApduResponse:(NSString *)response {
+    NSDictionary *eventData = @{
+        @"event": @"apduResponse",
+        @"response": response ?: @""
     };
     [self sendEventToFlutter:eventData];
 }

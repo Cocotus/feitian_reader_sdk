@@ -39,6 +39,10 @@ abstract class FeitianReaderSdkPlatform extends PlatformInterface {
     throw UnimplementedError('sendApduCommand() has not been implemented.');
   }
 
+  Future<List<String>?> sendApduCommands(List<String> apdus) {
+    throw UnimplementedError('sendApduCommands() has not been implemented.');
+  }
+
   Future<String?> readUID() {
     throw UnimplementedError('readUID() has not been implemented.');
   }

@@ -17,6 +17,12 @@ static SCARDCONTEXT gContxtHandle = 0;
 static SCARDHANDLE gCardHandle = 0;
 static NSString *gBluetoothID = @"";
 
+// Constants for APDU operations
+static const NSUInteger MIN_APDU_LENGTH = 8; // Minimum hex string length (4 bytes: CLA INS P1 P2)
+static const NSUInteger MAX_APDU_RESPONSE_SIZE = 2048 + 128;
+static const NSTimeInterval APDU_COMMAND_DELAY = 0.05; // Delay between sequential commands
+static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying battery after connection
+
 @interface ScanDeviceController () <ReaderInterfaceDelegate, CBCentralManagerDelegate>
 @property (nonatomic, strong) CBCentralManager *central;
 @property (nonatomic, strong) NSArray *slotarray;
@@ -153,6 +159,143 @@ static NSString *gBluetoothID = @"";
     // Implement EGK card reading logic here
     // This would involve APDU commands specific to EGK cards
     [self notifyError:@"EGK card reading not yet implemented"];
+}
+
+- (void)sendApduCommand:(NSString *)apduString {
+    if (!apduString || apduString.length < MIN_APDU_LENGTH) {
+        [self notifyError:@"Invalid APDU command"];
+        return;
+    }
+    
+    if (gCardHandle == 0) {
+        [self notifyError:@"No card connected"];
+        return;
+    }
+    
+    [self logMessage:[NSString stringWithFormat:@"Sending APDU: %@", apduString]];
+    
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        // Convert hex string to bytes
+        NSData *apduData = [self hexStringToData:apduString];
+        if (!apduData) {
+            [self notifyError:@"Failed to parse APDU command"];
+            return;
+        }
+        
+        unsigned char *capdu = (unsigned char *)apduData.bytes;
+        unsigned int capdulen = (unsigned int)apduData.length;
+        
+        unsigned char resp[MAX_APDU_RESPONSE_SIZE];
+        memset(resp, 0, sizeof(resp));
+        unsigned int resplen = sizeof(resp);
+        
+        // Send APDU to card
+        SCARD_IO_REQUEST pioSendPci;
+        LONG ret = SCardTransmit(gCardHandle, &pioSendPci, capdu, capdulen, NULL, resp, &resplen);
+        
+        if (ret != SCARD_S_SUCCESS) {
+            [self notifyError:[NSString stringWithFormat:@"APDU transmission failed: 0x%08lx", ret]];
+            return;
+        }
+        
+        // Convert response to hex string
+        NSMutableString *responseHex = [NSMutableString string];
+        for (unsigned int i = 0; i < resplen; i++) {
+            [responseHex appendFormat:@"%02X", resp[i]];
+        }
+        
+        [self logMessage:[NSString stringWithFormat:@"APDU Response: %@", responseHex]];
+        
+        // Notify delegate
+        if ([_delegate respondsToSelector:@selector(scanController:didReceiveApduResponse:)]) {
+            [_delegate scanController:self didReceiveApduResponse:responseHex];
+        }
+    });
+}
+
+- (void)sendApduCommands:(NSArray<NSString *> *)apduCommands 
+          withCompletion:(void (^)(NSArray<NSString *> *responses, NSError *error))completion {
+    
+    if (!apduCommands || apduCommands.count == 0) {
+        if (completion) {
+            completion(nil, [NSError errorWithDomain:@"FeitianReaderSDK" 
+                                                code:-1 
+                                            userInfo:@{NSLocalizedDescriptionKey: @"No APDU commands provided"}]);
+        }
+        return;
+    }
+    
+    if (gCardHandle == 0) {
+        if (completion) {
+            completion(nil, [NSError errorWithDomain:@"FeitianReaderSDK" 
+                                                code:-2 
+                                            userInfo:@{NSLocalizedDescriptionKey: @"No card connected"}]);
+        }
+        return;
+    }
+    
+    [self logMessage:[NSString stringWithFormat:@"Sending %lu APDU commands sequentially", (unsigned long)apduCommands.count]];
+    
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSMutableArray *responses = [NSMutableArray array];
+        NSError *error = nil;
+        
+        for (NSString *apduString in apduCommands) {
+            // Convert hex string to bytes
+            NSData *apduData = [self hexStringToData:apduString];
+            if (!apduData) {
+                error = [NSError errorWithDomain:@"FeitianReaderSDK" 
+                                            code:-3 
+                                        userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Failed to parse APDU: %@", apduString]}];
+                break;
+            }
+            
+            unsigned char *capdu = (unsigned char *)apduData.bytes;
+            unsigned int capdulen = (unsigned int)apduData.length;
+            
+            unsigned char resp[MAX_APDU_RESPONSE_SIZE];
+            memset(resp, 0, sizeof(resp));
+            unsigned int resplen = sizeof(resp);
+            
+            [self logMessage:[NSString stringWithFormat:@"Sending APDU [%lu/%lu]: %@", 
+                             (unsigned long)([apduCommands indexOfObject:apduString] + 1),
+                             (unsigned long)apduCommands.count,
+                             apduString]];
+            
+            // Send APDU to card
+            SCARD_IO_REQUEST pioSendPci;
+            LONG ret = SCardTransmit(gCardHandle, &pioSendPci, capdu, capdulen, NULL, resp, &resplen);
+            
+            if (ret != SCARD_S_SUCCESS) {
+                error = [NSError errorWithDomain:@"FeitianReaderSDK" 
+                                            code:ret 
+                                        userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"APDU failed: 0x%08lx", ret]}];
+                break;
+            }
+            
+            // Convert response to hex string
+            NSMutableString *responseHex = [NSMutableString string];
+            for (unsigned int i = 0; i < resplen; i++) {
+                [responseHex appendFormat:@"%02X", resp[i]];
+            }
+            
+            [responses addObject:responseHex];
+            [self logMessage:[NSString stringWithFormat:@"Response [%lu/%lu]: %@", 
+                             (unsigned long)responses.count,
+                             (unsigned long)apduCommands.count,
+                             responseHex]];
+            
+            // Small delay between commands
+            [NSThread sleepForTimeInterval:APDU_COMMAND_DELAY];
+        }
+        
+        // Call completion on main thread
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (completion) {
+                completion(error ? nil : responses, error);
+            }
+        });
+    });
 }
 
 #pragma mark - Private Methods
@@ -322,6 +465,38 @@ static NSString *gBluetoothID = @"";
     return [NSString stringWithUTF8String:buffer];
 }
 
+/**
+ * Convert a hex string to NSData
+ * @param hexString Hex string representation (e.g., "00A4040007A0000002471001")
+ *                  Spaces are allowed and will be removed
+ * @return NSData containing the bytes, or nil if the string is invalid
+ *         Returns nil if:
+ *         - The string has an odd number of characters (after removing spaces)
+ *         - The string contains non-hex characters
+ */
+- (NSData *)hexStringToData:(NSString *)hexString {
+    NSString *cleanHex = [hexString stringByReplacingOccurrencesOfString:@" " withString:@""];
+    cleanHex = [cleanHex uppercaseString];
+    
+    if (cleanHex.length % 2 != 0) {
+        return nil;
+    }
+    
+    NSMutableData *data = [NSMutableData data];
+    for (NSUInteger i = 0; i < cleanHex.length; i += 2) {
+        NSString *byteString = [cleanHex substringWithRange:NSMakeRange(i, 2)];
+        unsigned int byte;
+        if ([[NSScanner scannerWithString:byteString] scanHexInt:&byte]) {
+            unsigned char byteValue = (unsigned char)byte;
+            [data appendBytes:&byteValue length:1];
+        } else {
+            return nil;
+        }
+    }
+    
+    return data;
+}
+
 #pragma mark - CBCentralManagerDelegate
 
 - (void)centralManagerDidUpdateState:(CBCentralManager *)central {
@@ -403,7 +578,8 @@ static NSString *gBluetoothID = @"";
                 [self logMessage:[NSString stringWithFormat:@"Connected reader model: %@", readerModelName]];
             }
             
-            // Request battery level automatically
+            // Wait for reader to be ready before requesting battery
+            [NSThread sleepForTimeInterval:READER_READY_DELAY];
             [self getBatteryLevel];
         });
         
@@ -419,8 +595,10 @@ static NSString *gBluetoothID = @"";
             [_delegate scanController:self didConnectReader:_selectedDeviceName slots:slotNames];
         }
     } else {
-        // IMPORTANT: Handle disconnection
-        [self logMessage:[NSString stringWithFormat:@"Reader disconnected: %@", _connectedReaderName]];
+        // Handle disconnection
+        [self logMessage:@"Reader disconnected"];
+        [self logMessage:[NSString stringWithFormat:@"Disconnected Bluetooth ID: %@", gBluetoothID]];
+        
         [self disconnectReader];
     }
 }
