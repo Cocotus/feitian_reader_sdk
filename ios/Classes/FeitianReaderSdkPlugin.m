@@ -155,17 +155,19 @@
 }
 
 - (void)scanController:(id)controller didDetectCard:(NSString *)slotName {
+    // ✅ BUGFIX: Nil check for slotName to prevent crash
     NSDictionary *eventData = @{
         @"event": @"cardInserted",
-        @"slotName": slotName
+        @"slotName": slotName ?: @"Unknown Slot"
     };
     [self sendEventToFlutter:eventData];
 }
 
 - (void)scanController:(id)controller didRemoveCard:(NSString *)slotName {
+    // ✅ BUGFIX: Nil check for slotName to prevent crash
     NSDictionary *eventData = @{
         @"event": @"cardRemoved",
-        @"slotName": slotName
+        @"slotName": slotName ?: @"Unknown Slot"
     };
     [self sendEventToFlutter:eventData];
 }
