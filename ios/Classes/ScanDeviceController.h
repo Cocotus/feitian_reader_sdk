@@ -25,6 +25,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)scanController:(id)controller didReceiveLog:(NSString *)message;
 - (void)scanController:(id)controller didReadEGKData:(NSDictionary *)data;
 - (void)scanController:(id)controller didReceiveError:(NSString *)error;
+- (void)scanController:(id)controller didReceiveApduResponse:(NSString *)response;
 @end
 
 /**
@@ -50,6 +51,20 @@ NS_ASSUME_NONNULL_BEGIN
  * Get the connected reader's model name (e.g., "bR301", "iR301")
  */
 - (NSString *)getReaderModelName;
+
+/**
+ * Send a single APDU command to the card
+ * @param apduString Hex string representation of the APDU command (e.g., "00A4040007A0000002471001")
+ */
+- (void)sendApduCommand:(NSString *)apduString;
+
+/**
+ * Send multiple APDU commands sequentially to the card
+ * @param apduCommands Array of hex string APDUs to send in sequence
+ * @param completion Completion block called with array of response strings or error
+ */
+- (void)sendApduCommands:(NSArray<NSString *> *)apduCommands 
+          withCompletion:(void (^)(NSArray<NSString *> *responses, NSError *error))completion;
 
 @end
 

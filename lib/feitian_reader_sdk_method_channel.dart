@@ -38,6 +38,12 @@ class MethodChannelFeitianReaderSdk extends FeitianReaderSdkPlatform {
   }
 
   @override
+  Future<List<String>?> sendApduCommands(List<String> apdus) async {
+    final result = await methodChannel.invokeListMethod<String>('sendApduCommands', {'apdus': apdus});
+    return result;
+  }
+
+  @override
   Future<String?> readUID() async {
     final result = await methodChannel.invokeMethod<String>('readUID');
     return result;
