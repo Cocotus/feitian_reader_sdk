@@ -9,6 +9,10 @@ class MethodChannelFeitianReaderSdk extends FeitianReaderSdkPlatform {
   @visibleForTesting
   final methodChannel = const MethodChannel('feitian_reader_sdk');
 
+  /// The event channel used to receive events from the native platform.
+  @visibleForTesting
+  final eventChannel = const EventChannel('feitian_reader_sdk/events');
+
   @override
   Future<String?> getPlatformVersion() async {
     final version = await methodChannel.invokeMethod<String>('getPlatformVersion');
@@ -49,5 +53,10 @@ class MethodChannelFeitianReaderSdk extends FeitianReaderSdkPlatform {
   Future<String?> powerOffCard() async {
     final result = await methodChannel.invokeMethod<String>('powerOffCard');
     return result;
+  }
+
+  @override
+  Stream<Map<dynamic, dynamic>> get eventStream {
+    return eventChannel.receiveBroadcastStream().map((event) => event as Map<dynamic, dynamic>);
   }
 }

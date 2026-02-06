@@ -10,9 +10,11 @@
 #import "readerModel.h"
 #import <UIKit/UIKit.h>
 
-@interface FeitianReaderSdkPlugin () <ScanDeviceControllerDelegate>
+@interface FeitianReaderSdkPlugin () <ScanDeviceControllerDelegate, FlutterStreamHandler>
 @property (nonatomic, strong) FlutterMethodChannel *channel;
+@property (nonatomic, strong) FlutterEventChannel *eventChannel;
 @property (nonatomic, strong) ScanDeviceController *scanController;
+@property (nonatomic, copy) FlutterEventSink eventSink;
 @end
 
 @implementation FeitianReaderSdkPlugin
@@ -21,9 +23,14 @@
     FlutterMethodChannel* channel = [FlutterMethodChannel
                                      methodChannelWithName:@"feitian_reader_sdk"
                                      binaryMessenger:[registrar messenger]];
+    FlutterEventChannel* eventChannel = [FlutterEventChannel
+                                        eventChannelWithName:@"feitian_reader_sdk/events"
+                                        binaryMessenger:[registrar messenger]];
     FeitianReaderSdkPlugin* instance = [[FeitianReaderSdkPlugin alloc] init];
     instance.channel = channel;
+    instance.eventChannel = eventChannel;
     [registrar addMethodCallDelegate:instance channel:channel];
+    [eventChannel setStreamHandler:instance];
 }
 
 - (instancetype)init {
@@ -168,7 +175,23 @@
 }
 
 - (void)sendEventToFlutter:(NSDictionary *)eventData {
-    [self.channel invokeMethod:@"onNativeEvent" arguments:eventData];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (self.eventSink) {
+            self.eventSink(eventData);
+        }
+    });
+}
+
+#pragma mark - FlutterStreamHandler
+
+- (FlutterError *)onListenWithArguments:(id)arguments eventSink:(FlutterEventSink)events {
+    self.eventSink = events;
+    return nil;
+}
+
+- (FlutterError *)onCancelWithArguments:(id)arguments {
+    self.eventSink = nil;
+    return nil;
 }
 
 @end

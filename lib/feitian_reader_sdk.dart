@@ -28,4 +28,8 @@ class FeitianReaderSdk {
   Future<String?> powerOffCard() {
     return FeitianReaderSdkPlatform.instance.powerOffCard();
   }
+
+  Stream<Map<dynamic, dynamic>> get eventStream {
+    return FeitianReaderSdkPlatform.instance.eventStream;
+  }
 }

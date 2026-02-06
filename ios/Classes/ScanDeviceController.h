@@ -46,6 +46,11 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)powerOffCard;
 - (void)readEGKCard;
 
+/**
+ * Get the connected reader's model name (e.g., "bR301", "iR301")
+ */
+- (NSString *)getReaderModelName;
+
 @end
 
 NS_ASSUME_NONNULL_END
