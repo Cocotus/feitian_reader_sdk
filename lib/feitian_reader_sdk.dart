@@ -37,6 +37,10 @@ class FeitianReaderSdk {
     return FeitianReaderSdkPlatform.instance.readEGKCard();
   }
 
+  Future<String?> readEGKCardOnDemand() {
+    return FeitianReaderSdkPlatform.instance.readEGKCardOnDemand();
+  }
+
   Future<String?> powerOnCard() {
     return FeitianReaderSdkPlatform.instance.powerOnCard();
   }

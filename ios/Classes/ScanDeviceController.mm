@@ -341,32 +341,14 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
 - (void)readEGKCardOnDemand {
     [self logMessage:@"Starting on-demand EGK card reading workflow"];
     
-    // Step 1: Start scanner if not already scanning
-    if (!_isScanning) {
-        [self logMessage:@"Scanner not running, starting scan..."];
-        [self startScanning];
-        
-        // Wait a bit for scan to initialize
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-            [self continueReadEGKCardOnDemand];
-        });
-    } else {
-        // Scanner already running, continue immediately
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-            [self continueReadEGKCardOnDemand];
-        });
-    }
-}
-
-- (void)continueReadEGKCardOnDemand {
-    // Step 2: Check if card reader is available
+    // Step 1: Check if reader is connected
     if (!_connectedReaderName || _connectedReaderName.length == 0) {
         [self logMessage:@"No reader connected"];
         [self notifyNoBluetooth];
         return;
     }
     
-    // Step 3: Reader is connected, check if card is inserted
+    // Step 2: Reader is connected, check if card is inserted
     NSString *reader = [self getReaderList];
     if (!reader) {
         [self logMessage:@"No reader available for card connection"];
@@ -374,7 +356,7 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
         return;
     }
     
-    // Step 4: Try to connect to card (this will fail if no card is inserted)
+    // Step 3: Try to connect to card (this will fail if no card is inserted)
     DWORD dwActiveProtocol = -1;
     [self logMessage:@"Checking for card..."];
     LONG ret = SCardConnect(gContxtHandle, [reader UTF8String], SCARD_SHARE_SHARED,
@@ -388,7 +370,7 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
     
     [self logMessage:@"Card found and connected"];
     
-    // Step 5: Read EGK card using existing logic
+    // Step 4: Read EGK card using existing logic
     [self readEGKCard];
 }
 

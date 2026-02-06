@@ -239,7 +239,8 @@ class _MyAppState extends State<MyApp> {
         _feedback = 'Lese EGK-Karte...';
         _logs.clear(); // Clear logs before reading
       });
-      await _feitianReaderPlugin.readEGKCard();
+      // Use readEGKCardOnDemand for complete workflow
+      await _feitianReaderPlugin.readEGKCardOnDemand();
     } catch (e) {
       setState(() {
         _feedback = 'EGK-Lesevorgang fehlgeschlagen: $e';
@@ -369,7 +370,7 @@ class _MyAppState extends State<MyApp> {
               ElevatedButton.icon(
                 onPressed: _isConnected ? _readEGKCard : null,
                 icon: const Icon(Icons.credit_card),
-                label: const Text('Lese Karte'),
+                label: const Text('EGK Auslesen'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.green,
                   foregroundColor: Colors.white,
