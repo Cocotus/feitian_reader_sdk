@@ -171,7 +171,7 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
         // Disconnect Bluetooth reader
         if (_interface && gBluetoothID.length > 0) {
             [self logMessage:[NSString stringWithFormat:@"Disconnecting Bluetooth reader: %@", gBluetoothID]];
-            [_interface disconnectPeripheralReader:gBluetoothID];
+            [_interface disConnectCurrentPeripheralReader];  // ✅ CORRECT
         }
         
         // Clear state
