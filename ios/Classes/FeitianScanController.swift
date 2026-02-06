@@ -1,6 +1,17 @@
 import Foundation
 import CoreBluetooth
 
+// MARK: - Helper Model
+struct ReaderModel {
+    let name: String
+    var date: Date
+    
+    init(name: String, scanDate: Date) {
+        self.name = name
+        self.date = scanDate
+    }
+}
+
 // MARK: - Delegate Protocol for Communication with Flutter App
 @objc protocol FeitianScanControllerDelegate: AnyObject {
     @objc optional func didDiscoverDevice(_ deviceName: String, rssi: Int)
@@ -444,16 +455,5 @@ extension FeitianScanController: ReaderInterfaceDelegate {
     func didGetBattery(_ battery: Int) {
         log("Battery level: \(battery)%")
         delegate?.didReceiveBattery?(battery)
-    }
-}
-
-// MARK: - ReaderModel (From Demo line readerModel.h)
-class ReaderModel {
-    var name: String
-    var date: Date
-    
-    init(name: String, scanDate: Date) {
-        self.name = name
-        self.date = scanDate
     }
 }
