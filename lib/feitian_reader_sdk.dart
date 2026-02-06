@@ -5,6 +5,14 @@ class FeitianReaderSdk {
     return FeitianReaderSdkPlatform.instance.getPlatformVersion();
   }
 
+  Future<String?> startBluetoothScan() {
+    return FeitianReaderSdkPlatform.instance.startBluetoothScan();
+  }
+
+  Future<String?> stopBluetoothScan() {
+    return FeitianReaderSdkPlatform.instance.stopBluetoothScan();
+  }
+
   Future<String?> connectReader() {
     return FeitianReaderSdkPlatform.instance.connectReader();
   }
@@ -23,6 +31,10 @@ class FeitianReaderSdk {
 
   Future<String?> readUID() {
     return FeitianReaderSdkPlatform.instance.readUID();
+  }
+
+  Future<String?> readEGKCard() {
+    return FeitianReaderSdkPlatform.instance.readEGKCard();
   }
 
   Future<String?> powerOnCard() {

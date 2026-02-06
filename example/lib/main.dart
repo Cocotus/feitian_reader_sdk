@@ -19,12 +19,13 @@ class _MyAppState extends State<MyApp> {
   String _feedback = 'No feedback yet';
   final _feitianReaderPlugin = FeitianReaderSdk();
   static const platform = MethodChannel('feitian_reader_sdk');
-  final List<String> _logsAndData = [];
   final List<String> _logs = [];
   final TextEditingController _apduController = TextEditingController();
   String? _deviceName;
   bool _isConnected = false;
+  bool _isScanning = false;
   StreamSubscription<Map<dynamic, dynamic>>? _eventSubscription;
+  Map<String, dynamic>? _egkData;
 
   @override
   void initState() {
@@ -34,6 +35,14 @@ class _MyAppState extends State<MyApp> {
     _setupEventStream();
     // Set default APDU command
     _apduController.text = '00A4040007A0000002471001';
+    // Auto-start Bluetooth scan on app launch
+    _autoStartScan();
+  }
+  
+  Future<void> _autoStartScan() async {
+    // Small delay to ensure UI is ready
+    await Future.delayed(const Duration(milliseconds: 500));
+    _startBluetoothScan();
   }
 
   @override
@@ -56,48 +65,37 @@ class _MyAppState extends State<MyApp> {
           }
         } else if (eventType == 'deviceDiscovered') {
           _deviceName = event['deviceName'];
-          _logs.insert(0, 'Device discovered: $_deviceName (RSSI: ${event['rssi']})');
+          _logs.insert(0, '📱 Device discovered: $_deviceName (RSSI: ${event['rssi']})');
         } else if (eventType == 'readerConnected') {
           _isConnected = true;
-          _logs.insert(0, 'Reader connected: ${event['deviceName']}');
-          _logs.insert(0, 'Available slots: ${event['slots']}');
+          _isScanning = false;
+          _logs.insert(0, '✅ Reader connected: ${event['deviceName']}');
+          _logs.insert(0, '📋 Available slots: ${event['slots']}');
         } else if (eventType == 'readerDisconnected') {
           _isConnected = false;
-          _logs.insert(0, 'Reader disconnected');
+          _egkData = null;
+          _logs.insert(0, '❌ Reader disconnected');
         } else if (eventType == 'batteryLevel') {
-          _logs.insert(0, 'Battery level: ${event['level']}%');
+          _logs.insert(0, '🔋 Battery level: ${event['level']}%');
         } else if (eventType == 'cardInserted') {
-          _logs.insert(0, 'Card inserted in slot: ${event['slotName']}');
+          _logs.insert(0, '🎴 Card inserted in slot: ${event['slotName']}');
         } else if (eventType == 'cardRemoved') {
-          _logs.insert(0, 'Card removed from slot: ${event['slotName']}');
+          _logs.insert(0, '🎴 Card removed from slot: ${event['slotName']}');
+        } else if (eventType == 'egkData') {
+          _egkData = Map<String, dynamic>.from(event);
+          _logs.insert(0, '💾 EGK data received');
+        } else if (eventType == 'apduResponse') {
+          _logs.insert(0, '📤 APDU Response: ${event['response']}');
         } else if (eventType == 'error') {
-          _logs.insert(0, 'ERROR: ${event['error']}');
+          _logs.insert(0, '⚠️ ERROR: ${event['error']}');
         }
       });
     });
   }
 
   Future<void> _handleMethodCall(MethodCall call) async {
-    switch (call.method) {
-      case 'log':
-        setState(() {
-          _logsAndData.add('LOG: ${call.arguments}');
-        });
-        break;
-      case 'data':
-        setState(() {
-          final dataStrings = List<String>.from(call.arguments);
-          for (var data in dataStrings) {
-            _logsAndData.add('DATA: $data');
-          }
-        });
-        break;
-      case 'apduResponse':
-        setState(() {
-          _logsAndData.add('APDU Response: ${call.arguments}');
-        });
-        break;
-    }
+    // Method call handler for legacy support
+    // Most events now come through the event stream
   }
 
   Future<void> initPlatformState() async {
@@ -128,9 +126,70 @@ class _MyAppState extends State<MyApp> {
     }
   }
 
-  void _clearLogsAndData() {
+  Future<void> _startBluetoothScan() async {
+    try {
+      setState(() {
+        _isScanning = true;
+        _feedback = 'Starting Bluetooth scan...';
+      });
+      await _feitianReaderPlugin.startBluetoothScan();
+    } catch (e) {
+      setState(() {
+        _feedback = 'Scan failed: $e';
+        _isScanning = false;
+      });
+    }
+  }
+
+  Future<void> _disconnectReader() async {
+    try {
+      setState(() {
+        _feedback = 'Disconnecting reader...';
+      });
+      await _feitianReaderPlugin.disconnectReader();
+    } catch (e) {
+      setState(() {
+        _feedback = 'Disconnect failed: $e';
+      });
+    }
+  }
+
+  Future<void> _readEGKCard() async {
+    try {
+      setState(() {
+        _feedback = 'Reading EGK card...';
+      });
+      await _feitianReaderPlugin.readEGKCard();
+    } catch (e) {
+      setState(() {
+        _feedback = 'EGK read failed: $e';
+      });
+    }
+  }
+
+  Future<void> _sendApdu() async {
+    final apdu = _apduController.text.trim();
+    if (apdu.isEmpty) {
+      setState(() {
+        _feedback = 'Error: APDU command is empty';
+      });
+      return;
+    }
+    try {
+      setState(() {
+        _feedback = 'Sending APDU...';
+      });
+      await _feitianReaderPlugin.sendApduCommand(apdu);
+    } catch (e) {
+      setState(() {
+        _feedback = 'APDU send failed: $e';
+      });
+    }
+  }
+
+  void _clearLogs() {
     setState(() {
-      _logsAndData.clear();
+      _logs.clear();
     });
   }
 
@@ -139,133 +198,135 @@ class _MyAppState extends State<MyApp> {
     return MaterialApp(
       home: Scaffold(
         appBar: AppBar(
-          title: const Text('FEITIAN Card Reader Demo'),
+          title: const Text('FEITIAN EGK Card Reader'),
+          backgroundColor: Colors.blue,
         ),
         body: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              Text('Platform: $_platformVersion', style: const TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              Text('Status: $_feedback', style: const TextStyle(fontSize: 12)),
-              const SizedBox(height: 16),
-              
-              // Reader Connection Buttons
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () {
-                        _clearLogsAndData();
-                        _updateFeedback('Connect Reader', () async {
-                          return await _feitianReaderPlugin.connectReader();
-                        });
-                      },
-                      child: const Text('Connect Reader'),
-                    ),
+              // Connection Status Card
+              Card(
+                color: _isConnected ? Colors.green.shade50 : (_isScanning ? Colors.orange.shade50 : Colors.grey.shade100),
+                child: Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            _isConnected ? Icons.check_circle : (_isScanning ? Icons.bluetooth_searching : Icons.bluetooth_disabled),
+                            color: _isConnected ? Colors.green : (_isScanning ? Colors.orange : Colors.grey),
+                            size: 24,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _isConnected 
+                                ? 'Connected to $_deviceName' 
+                                : (_isScanning ? 'Scanning for devices...' : 'Not connected'),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                color: _isConnected ? Colors.green.shade900 : Colors.black87,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (_feedback.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          _feedback,
+                          style: const TextStyle(fontSize: 12, color: Colors.black54),
+                        ),
+                      ],
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => _updateFeedback('Disconnect Reader', () async {
-                        return await _feitianReaderPlugin.disconnectReader();
-                      }),
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                      child: const Text('Disconnect'),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              
-              // Card Power Buttons
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => _updateFeedback('Power On Card', () async {
-                        return await _feitianReaderPlugin.powerOnCard();
-                      }),
-                      child: const Text('Power On Card'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => _updateFeedback('Power Off Card', () async {
-                        return await _feitianReaderPlugin.powerOffCard();
-                      }),
-                      child: const Text('Power Off Card'),
-                    ),
-                  ),
-                ],
+                ),
               ),
               const SizedBox(height: 16),
               
-              // APDU Input Section
-              const Text('APDU Command:', style: TextStyle(fontWeight: FontWeight.bold)),
+              // Main Action Buttons
+              ElevatedButton.icon(
+                onPressed: _isConnected ? _disconnectReader : null,
+                icon: const Icon(Icons.bluetooth_disabled),
+                label: const Text('Trenne Kartenleser'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.all(16),
+                  disabledBackgroundColor: Colors.grey.shade300,
+                ),
+              ),
+              const SizedBox(height: 8),
+              
+              ElevatedButton.icon(
+                onPressed: _isConnected ? _readEGKCard : null,
+                icon: const Icon(Icons.credit_card),
+                label: const Text('Lese Karte'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.all(16),
+                  disabledBackgroundColor: Colors.grey.shade300,
+                ),
+              ),
+              const SizedBox(height: 16),
+              
+              // EGK Data Display
+              if (_egkData != null) ...[
+                Card(
+                  color: Colors.blue.shade50,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '💳 EGK Kartendaten',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                        const Divider(),
+                        ..._egkData!.entries.where((e) => e.key != 'event').map((e) => 
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: Text('${e.key}: ${e.value}', style: const TextStyle(fontSize: 12)),
+                          )
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+              
+              // APDU Section
+              const Text('APDU Befehl senden:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
               const SizedBox(height: 8),
               TextField(
                 controller: _apduController,
                 decoration: const InputDecoration(
                   border: OutlineInputBorder(),
-                  hintText: 'Enter APDU hex command',
-                  helperText: 'Example: 00A4040007A0000002471001',
+                  hintText: 'APDU Hex-Befehl eingeben',
+                  helperText: 'Beispiel: 00A4040007A0000002471001',
+                  contentPadding: EdgeInsets.all(12),
                 ),
-                style: const TextStyle(fontFamily: 'Courier'),
+                style: const TextStyle(fontFamily: 'Courier', fontSize: 12),
               ),
               const SizedBox(height: 8),
-              ElevatedButton(
-                onPressed: () {
-                  final apdu = _apduController.text.trim();
-                  if (apdu.isEmpty) {
-                    setState(() {
-                      _feedback = 'Error: APDU command is empty';
-                    });
-                    return;
-                  }
-                  _updateFeedback('Send APDU', () async {
-                    return await _feitianReaderPlugin.sendApduCommand(apdu);
-                  });
-                },
-                child: const Text('Send APDU Command'),
-              ),
-              const SizedBox(height: 8),
-              
-              // Quick Commands
-              Wrap(
-                spacing: 8,
-                children: [
-                  ElevatedButton(
-                    onPressed: () {
-                      _apduController.text = '00A4040007A0000002471001';
-                    },
-                    child: const Text('Select App'),
-                  ),
-                  ElevatedButton(
-                    onPressed: () {
-                      _apduController.text = '0084000008';
-                    },
-                    child: const Text('Get Challenge'),
-                  ),
-                  ElevatedButton(
-                    onPressed: () {
-                      _apduController.text = '00B00000FF';
-                    },
-                    child: const Text('Read Binary'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              
-              // Read UID Button
-              ElevatedButton(
-                onPressed: () => _updateFeedback('Read UID', () async {
-                  return await _feitianReaderPlugin.readUID();
-                }),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
-                child: const Text('Read Card UID'),
+              ElevatedButton.icon(
+                onPressed: _isConnected ? _sendApdu : null,
+                icon: const Icon(Icons.send),
+                label: const Text('Sende APDU'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.all(12),
+                  disabledBackgroundColor: Colors.grey.shade300,
+                ),
               ),
               const SizedBox(height: 16),
               
@@ -273,47 +334,10 @@ class _MyAppState extends State<MyApp> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Event Logs:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const Text('Event-Protokoll:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                   TextButton(
-                    onPressed: () {
-                      setState(() {
-                        _logs.clear();
-                      });
-                    },
-                    child: const Text('Clear'),
-                  ),
-                ],
-              ),
-              const Divider(),
-              Container(
-                height: 200,
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: _logs.isEmpty
-                    ? const Center(child: Text('No event logs yet'))
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(8),
-                        itemCount: _logs.length,
-                        itemBuilder: (context, index) {
-                          return Text(
-                            _logs[index],
-                            style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
-                          );
-                        },
-                      ),
-              ),
-              const SizedBox(height: 16),
-              
-              // Logs Section
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('Logs & Data:', style: TextStyle(fontWeight: FontWeight.bold)),
-                  TextButton(
-                    onPressed: _clearLogsAndData,
-                    child: const Text('Clear'),
+                    onPressed: _clearLogs,
+                    child: const Text('Löschen'),
                   ),
                 ],
               ),
@@ -321,19 +345,21 @@ class _MyAppState extends State<MyApp> {
               Expanded(
                 child: Container(
                   decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey),
-                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(8),
+                    color: Colors.grey.shade50,
                   ),
-                  child: _logsAndData.isEmpty
-                      ? const Center(child: Text('No logs yet'))
+                  child: _logs.isEmpty
+                      ? const Center(child: Text('Keine Ereignisse', style: TextStyle(color: Colors.grey)))
                       : ListView.builder(
-                          itemCount: _logsAndData.length,
+                          padding: const EdgeInsets.all(8),
+                          itemCount: _logs.length,
                           itemBuilder: (context, index) {
                             return Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              padding: const EdgeInsets.symmetric(vertical: 2),
                               child: Text(
-                                _logsAndData[index],
-                                style: const TextStyle(fontSize: 12, fontFamily: 'Courier'),
+                                _logs[index],
+                                style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
                               ),
                             );
                           },
