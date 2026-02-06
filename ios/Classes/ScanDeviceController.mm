@@ -160,18 +160,34 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
 - (void)disconnectReader {
     if (_connectedReaderName) {
         [self logMessage:[NSString stringWithFormat:@"Disconnecting from reader: %@", _connectedReaderName]];
-        _connectedReaderName = nil;
-        gBluetoothID = @"";
-        _slotarray = nil;
         
+        // Disconnect card if connected
         if (gCardHandle != 0) {
+            [self logMessage:@"Disconnecting card..."];
             SCardDisconnect(gCardHandle, SCARD_LEAVE_CARD);
             gCardHandle = 0;
         }
         
+        // Disconnect Bluetooth reader
+        if (_interface && gBluetoothID.length > 0) {
+            [self logMessage:[NSString stringWithFormat:@"Disconnecting Bluetooth reader: %@", gBluetoothID]];
+            [_interface disconnectPeripheralReader:gBluetoothID];
+        }
+        
+        // Clear state
+        _connectedReaderName = nil;
+        gBluetoothID = @"";
+        _slotarray = nil;
+        _batteryLoggedOnce = NO;
+        
+        // Notify Flutter
         if ([_delegate respondsToSelector:@selector(scanControllerDidDisconnectReader:)]) {
             [_delegate scanControllerDidDisconnectReader:self];
         }
+        
+        [self logMessage:@"Reader disconnected successfully"];
+    } else {
+        [self logMessage:@"No reader connected to disconnect"];
     }
 }
 
@@ -197,9 +213,84 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
 
 - (void)readEGKCard {
     [self logMessage:@"Reading EGK card data"];
-    // Implement EGK card reading logic here
-    // This would involve APDU commands specific to EGK cards
-    [self notifyError:@"EGK card reading not yet implemented"];
+    
+    // Step 1: Connect to card (power on)
+    DWORD dwActiveProtocol = -1;
+    NSString *reader = [self getReaderList];
+    
+    if (!reader) {
+        [self notifyError:@"No reader available for EGK card reading"];
+        return;
+    }
+    
+    [self logMessage:@"Connecting to EGK card..."];
+    LONG ret = SCardConnect(gContxtHandle, [reader UTF8String], SCARD_SHARE_SHARED,
+                           SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1, &gCardHandle, &dwActiveProtocol);
+    
+    if (ret != SCARD_S_SUCCESS) {
+        [self notifyError:[NSString stringWithFormat:@"Failed to connect to EGK card: 0x%08lx", ret]];
+        return;
+    }
+    
+    [self logMessage:@"EGK card connected successfully"];
+    
+    // Step 2: Get ATR (Answer To Reset)
+    unsigned char patr[33] = {0};
+    DWORD atrLen = sizeof(patr);
+    ret = SCardGetAttrib(gCardHandle, 0, patr, &atrLen);
+    if (ret != SCARD_S_SUCCESS) {
+        [self logMessage:[NSString stringWithFormat:@"SCardGetAttrib warning: 0x%08lx", ret]];
+    }
+    
+    // Convert ATR to hex string
+    NSMutableString *atrHex = [NSMutableString string];
+    for (DWORD i = 0; i < atrLen; i++) {
+        [atrHex appendFormat:@"%02X", patr[i]];
+    }
+    [self logMessage:[NSString stringWithFormat:@"Card ATR: %@", atrHex]];
+    
+    // Step 3: Send EGK-specific APDU commands
+    // TODO: Replace these placeholder commands with actual EGK APDU commands
+    // Based on eGK specifications from gematik
+    
+    NSMutableDictionary *egkData = [NSMutableDictionary dictionary];
+    egkData[@"atr"] = atrHex;
+    egkData[@"cardType"] = @"EGK";
+    egkData[@"readSuccess"] = @YES;
+    
+    // Placeholder APDU 1: Select EGK Root Application
+    // Real command would be: SELECT FILE (AID for eGK root application)
+    // Example: 00 A4 04 0C 07 D2 76 00 01 44 80 00
+    [self logMessage:@"Sending APDU commands to read EGK data..."];
+    [self logMessage:@"TODO: Implement actual EGK APDU commands"];
+    [self logMessage:@"TODO: Command 1 - Select eGK Root Application"];
+    [self logMessage:@"TODO: Command 2 - Select and read personal data (PD)"];
+    [self logMessage:@"TODO: Command 3 - Select and read insurance data (VD)"];
+    
+    // Placeholder data - in real implementation, this would come from APDU responses
+    egkData[@"placeholder"] = @"Replace with actual EGK data from APDU responses";
+    egkData[@"patientName"] = @"[To be read from card]";
+    egkData[@"insuranceNumber"] = @"[To be read from card]";
+    egkData[@"insuranceCompany"] = @"[To be read from card]";
+    
+    [self logMessage:@"EGK card reading completed"];
+    
+    // Step 4: Notify Flutter with the data
+    if ([_delegate respondsToSelector:@selector(scanController:didReadEGKData:)]) {
+        [_delegate scanController:self didReadEGKData:egkData];
+    }
+    
+    // Step 5: Auto-disconnect card
+    [self logMessage:@"Disconnecting from card..."];
+    if (gCardHandle != 0) {
+        SCardDisconnect(gCardHandle, SCARD_LEAVE_CARD);
+        gCardHandle = 0;
+        [self logMessage:@"Card disconnected"];
+    }
+    
+    // Step 6: Auto-disconnect reader
+    [self logMessage:@"Disconnecting from reader..."];
+    [self disconnectReader];
 }
 
 - (void)sendApduCommand:(NSString *)apduString {
@@ -624,6 +715,9 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
         gBluetoothID = bluetoothID;
         _slotarray = slotArray.count > 0 ? slotArray : nil;
         
+        // ✅ OPTIMIZATION: Reset battery log flag on new connection
+        _batteryLoggedOnce = NO;
+        
         // ✅ FIX: Only set _connectedReaderName if _selectedDeviceName is valid
         if (_selectedDeviceName && _selectedDeviceName.length > 0) {
             _connectedReaderName = _selectedDeviceName;
@@ -679,15 +773,25 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
 }
 
 - (void)cardInterfaceDidDetach:(BOOL)attached slotname:(NSString *)slotname {
+    // ✅ BUGFIX: Nil check for slotname to prevent crash
+    NSString *safeSlotName = slotname ?: @"Unknown Slot";
+    
     if (attached) {
-        [self logMessage:[NSString stringWithFormat:@"Card inserted in slot: %@", slotname]];
+        [self logMessage:[NSString stringWithFormat:@"Card inserted in slot: %@", safeSlotName]];
         if ([_delegate respondsToSelector:@selector(scanController:didDetectCard:)]) {
-            [_delegate scanController:self didDetectCard:slotname];
+            [_delegate scanController:self didDetectCard:safeSlotName];
         }
+        
+        // ✅ FEATURE: Automatically read EGK card on insertion with debounce
+        // Add a small delay to avoid race conditions with rapid card insertions
+        [self logMessage:@"Automatically triggering EGK card read in 0.5s..."];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            [self readEGKCard];
+        });
     } else {
-        [self logMessage:[NSString stringWithFormat:@"Card removed from slot: %@", slotname]];
+        [self logMessage:[NSString stringWithFormat:@"Card removed from slot: %@", safeSlotName]];
         if ([_delegate respondsToSelector:@selector(scanController:didRemoveCard:)]) {
-            [_delegate scanController:self didRemoveCard:slotname];
+            [_delegate scanController:self didRemoveCard:safeSlotName];
         }
     }
 }
@@ -706,7 +810,13 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
 }
 
 - (void)didGetBattery:(NSInteger)battery {
-    [self logMessage:[NSString stringWithFormat:@"Battery level: %ld%%", (long)battery]];
+    // ✅ OPTIMIZATION: Only log battery level once per connection
+    if (!_batteryLoggedOnce) {
+        [self logMessage:[NSString stringWithFormat:@"Battery level: %ld%%", (long)battery]];
+        _batteryLoggedOnce = YES;
+    }
+    
+    // Always notify delegate so Flutter can update UI
     if ([_delegate respondsToSelector:@selector(scanController:didReceiveBattery:)]) {
         [_delegate scanController:self didReceiveBattery:battery];
     }

@@ -36,6 +36,7 @@ NS_ASSUME_NONNULL_BEGIN
 @interface ScanDeviceController : NSObject
 
 @property (nonatomic, weak, nullable) id<ScanDeviceControllerDelegate> delegate;
+@property (nonatomic, assign) BOOL batteryLoggedOnce;
 
 - (instancetype)init;
 - (void)startScanning;

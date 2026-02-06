@@ -27,6 +27,14 @@ abstract class FeitianReaderSdkPlatform extends PlatformInterface {
     throw UnimplementedError('getPlatformVersion() has not been implemented.');
   }
 
+  Future<String?> startBluetoothScan() {
+    throw UnimplementedError('startBluetoothScan() has not been implemented.');
+  }
+
+  Future<String?> stopBluetoothScan() {
+    throw UnimplementedError('stopBluetoothScan() has not been implemented.');
+  }
+
   Future<String?> connectReader() {
     throw UnimplementedError('connectReader() has not been implemented.');
   }
@@ -45,6 +53,10 @@ abstract class FeitianReaderSdkPlatform extends PlatformInterface {
 
   Future<String?> readUID() {
     throw UnimplementedError('readUID() has not been implemented.');
+  }
+
+  Future<String?> readEGKCard() {
+    throw UnimplementedError('readEGKCard() has not been implemented.');
   }
 
   Future<String?> powerOnCard() {

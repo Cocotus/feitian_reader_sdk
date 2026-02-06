@@ -20,6 +20,18 @@ class MethodChannelFeitianReaderSdk extends FeitianReaderSdkPlatform {
   }
 
   @override
+  Future<String?> startBluetoothScan() async {
+    final result = await methodChannel.invokeMethod<String>('startBluetoothScan');
+    return result;
+  }
+
+  @override
+  Future<String?> stopBluetoothScan() async {
+    final result = await methodChannel.invokeMethod<String>('stopBluetoothScan');
+    return result;
+  }
+
+  @override
   Future<String?> connectReader() async {
     final result = await methodChannel.invokeMethod<String>('connectReader');
     return result;
@@ -46,6 +58,12 @@ class MethodChannelFeitianReaderSdk extends FeitianReaderSdkPlatform {
   @override
   Future<String?> readUID() async {
     final result = await methodChannel.invokeMethod<String>('readUID');
+    return result;
+  }
+
+  @override
+  Future<String?> readEGKCard() async {
+    final result = await methodChannel.invokeMethod<String>('readEGKCard');
     return result;
   }
 
