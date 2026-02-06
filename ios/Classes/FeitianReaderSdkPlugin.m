@@ -85,6 +85,10 @@
         [self.scanController readEGKCard];
         result(@"EGK card reading initiated");
         
+    } else if ([@"readEGKCardOnDemand" isEqualToString:call.method]) {
+        [self.scanController readEGKCardOnDemand];
+        result(@"On-demand EGK card reading initiated");
+        
     } else if ([@"sendApduCommand" isEqualToString:call.method]) {
         NSString *apduCommand = call.arguments[@"apdu"];
         if (apduCommand) {
@@ -206,6 +210,36 @@
     NSDictionary *eventData = @{
         @"event": @"apduResponse",
         @"response": response ?: @""
+    };
+    [self sendEventToFlutter:eventData];
+}
+
+- (void)scanController:(id)controller didSendCardData:(NSArray<NSString *> *)data {
+    NSDictionary *eventData = @{
+        @"event": @"data",
+        @"data": data
+    };
+    [self sendEventToFlutter:eventData];
+}
+
+- (void)scanControllerDidNotifyNoCard:(id)controller {
+    NSDictionary *eventData = @{
+        @"event": @"noDataMobileMode"
+    };
+    [self sendEventToFlutter:eventData];
+}
+
+- (void)scanControllerDidNotifyNoReader:(id)controller {
+    NSDictionary *eventData = @{
+        @"event": @"noBluetooth"
+    };
+    [self sendEventToFlutter:eventData];
+}
+
+- (void)scanController:(id)controller didReceiveLowBattery:(NSInteger)level {
+    NSDictionary *eventData = @{
+        @"event": @"lowBattery",
+        @"level": @(level)
     };
     [self sendEventToFlutter:eventData];
 }

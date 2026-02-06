@@ -211,6 +211,51 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
     }
 }
 
+- (void)sendLog:(NSString *)message {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if ([self.delegate respondsToSelector:@selector(scanController:didReceiveLog:)]) {
+            [self.delegate scanController:self didReceiveLog:message];
+        }
+    });
+}
+
+- (void)sendDataToFlutter:(NSArray<NSString *> *)data {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if ([self.delegate respondsToSelector:@selector(scanController:didSendCardData:)]) {
+            [self.delegate scanController:self didSendCardData:data];
+        }
+    });
+}
+
+- (void)notifyNoDataMobileMode {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self sendLog:@"Keine Karte gefunden!"];
+        if ([self.delegate respondsToSelector:@selector(scanControllerDidNotifyNoCard:)]) {
+            [self.delegate scanControllerDidNotifyNoCard:self];
+        }
+    });
+}
+
+- (void)notifyNoBluetooth {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self sendLog:@"Kartenleser nicht verbunden!"];
+        if ([self.delegate respondsToSelector:@selector(scanControllerDidNotifyNoReader:)]) {
+            [self.delegate scanControllerDidNotifyNoReader:self];
+        }
+    });
+}
+
+- (void)notifyBattery:(NSInteger)battery {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (battery < 10) {
+            if ([self.delegate respondsToSelector:@selector(scanController:didReceiveLowBattery:)]) {
+                [self.delegate scanController:self didReceiveLowBattery:battery];
+            }
+        }
+    });
+}
+
+
 - (void)readEGKCard {
     [self logMessage:@"Reading EGK card data"];
     
@@ -291,6 +336,60 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
     // Step 6: Auto-disconnect reader
     [self logMessage:@"Disconnecting from reader..."];
     [self disconnectReader];
+}
+
+- (void)readEGKCardOnDemand {
+    [self logMessage:@"Starting on-demand EGK card reading workflow"];
+    
+    // Step 1: Start scanner if not already scanning
+    if (!_isScanning) {
+        [self logMessage:@"Scanner not running, starting scan..."];
+        [self startScanning];
+        
+        // Wait a bit for scan to initialize
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            [self continueReadEGKCardOnDemand];
+        });
+    } else {
+        // Scanner already running, continue immediately
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            [self continueReadEGKCardOnDemand];
+        });
+    }
+}
+
+- (void)continueReadEGKCardOnDemand {
+    // Step 2: Check if card reader is available
+    if (!_connectedReaderName || _connectedReaderName.length == 0) {
+        [self logMessage:@"No reader connected"];
+        [self notifyNoBluetooth];
+        return;
+    }
+    
+    // Step 3: Reader is connected, check if card is inserted
+    NSString *reader = [self getReaderList];
+    if (!reader) {
+        [self logMessage:@"No reader available for card connection"];
+        [self notifyNoBluetooth];
+        return;
+    }
+    
+    // Step 4: Try to connect to card (this will fail if no card is inserted)
+    DWORD dwActiveProtocol = -1;
+    [self logMessage:@"Checking for card..."];
+    LONG ret = SCardConnect(gContxtHandle, [reader UTF8String], SCARD_SHARE_SHARED,
+                           SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1, &gCardHandle, &dwActiveProtocol);
+    
+    if (ret != SCARD_S_SUCCESS) {
+        [self logMessage:[NSString stringWithFormat:@"No card found: 0x%08lx", ret]];
+        [self notifyNoDataMobileMode];
+        return;
+    }
+    
+    [self logMessage:@"Card found and connected"];
+    
+    // Step 5: Read EGK card using existing logic
+    [self readEGKCard];
 }
 
 - (void)sendApduCommand:(NSString *)apduString {
@@ -782,12 +881,8 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
             [_delegate scanController:self didDetectCard:safeSlotName];
         }
         
-        // ✅ FEATURE: Automatically read EGK card on insertion with debounce
-        // Add a small delay to avoid race conditions with rapid card insertions
-        [self logMessage:@"Automatically triggering EGK card read in 0.5s..."];
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-            [self readEGKCard];
-        });
+        // ❌ REMOVED: Automatic EGK card read on insertion
+        // Card reading is now triggered on-demand via readEGKCardOnDemand method
     } else {
         [self logMessage:[NSString stringWithFormat:@"Card removed from slot: %@", safeSlotName]];
         if ([_delegate respondsToSelector:@selector(scanController:didRemoveCard:)]) {
@@ -815,6 +910,9 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
         [self logMessage:[NSString stringWithFormat:@"Battery level: %ld%%", (long)battery]];
         _batteryLoggedOnce = YES;
     }
+    
+    // Batterie-Warnung bei < 10%
+    [self notifyBattery:battery];
     
     // Always notify delegate so Flutter can update UI
     if ([_delegate respondsToSelector:@selector(scanController:didReceiveBattery:)]) {
