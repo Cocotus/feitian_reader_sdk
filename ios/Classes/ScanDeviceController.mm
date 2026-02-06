@@ -17,6 +17,12 @@ static SCARDCONTEXT gContxtHandle = 0;
 static SCARDHANDLE gCardHandle = 0;
 static NSString *gBluetoothID = @"";
 
+// Constants for APDU operations
+static const NSUInteger MIN_APDU_LENGTH = 10; // Minimum hex string length (5 bytes)
+static const NSUInteger MAX_APDU_RESPONSE_SIZE = 2048 + 128;
+static const NSTimeInterval APDU_COMMAND_DELAY = 0.05; // Delay between sequential commands
+static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying battery after connection
+
 @interface ScanDeviceController () <ReaderInterfaceDelegate, CBCentralManagerDelegate>
 @property (nonatomic, strong) CBCentralManager *central;
 @property (nonatomic, strong) NSArray *slotarray;
@@ -156,7 +162,7 @@ static NSString *gBluetoothID = @"";
 }
 
 - (void)sendApduCommand:(NSString *)apduString {
-    if (!apduString || apduString.length < 10) {
+    if (!apduString || apduString.length < MIN_APDU_LENGTH) {
         [self notifyError:@"Invalid APDU command"];
         return;
     }
@@ -179,7 +185,7 @@ static NSString *gBluetoothID = @"";
         unsigned char *capdu = (unsigned char *)apduData.bytes;
         unsigned int capdulen = (unsigned int)apduData.length;
         
-        unsigned char resp[2048 + 128];
+        unsigned char resp[MAX_APDU_RESPONSE_SIZE];
         memset(resp, 0, sizeof(resp));
         unsigned int resplen = sizeof(resp);
         
@@ -247,7 +253,7 @@ static NSString *gBluetoothID = @"";
             unsigned char *capdu = (unsigned char *)apduData.bytes;
             unsigned int capdulen = (unsigned int)apduData.length;
             
-            unsigned char resp[2048 + 128];
+            unsigned char resp[MAX_APDU_RESPONSE_SIZE];
             memset(resp, 0, sizeof(resp));
             unsigned int resplen = sizeof(resp);
             
@@ -280,7 +286,7 @@ static NSString *gBluetoothID = @"";
                              responseHex]];
             
             // Small delay between commands
-            [NSThread sleepForTimeInterval:0.05];
+            [NSThread sleepForTimeInterval:APDU_COMMAND_DELAY];
         }
         
         // Call completion on main thread
@@ -564,7 +570,7 @@ static NSString *gBluetoothID = @"";
             }
             
             // Wait for reader to be ready before requesting battery
-            [NSThread sleepForTimeInterval:0.5];
+            [NSThread sleepForTimeInterval:READER_READY_DELAY];
             [self getBatteryLevel];
         });
         
