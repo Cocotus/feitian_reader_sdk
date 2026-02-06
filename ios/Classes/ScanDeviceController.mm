@@ -18,7 +18,7 @@ static SCARDHANDLE gCardHandle = 0;
 static NSString *gBluetoothID = @"";
 
 // Constants for APDU operations
-static const NSUInteger MIN_APDU_LENGTH = 10; // Minimum hex string length (5 bytes)
+static const NSUInteger MIN_APDU_LENGTH = 8; // Minimum hex string length (4 bytes: CLA INS P1 P2)
 static const NSUInteger MAX_APDU_RESPONSE_SIZE = 2048 + 128;
 static const NSTimeInterval APDU_COMMAND_DELAY = 0.05; // Delay between sequential commands
 static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying battery after connection
@@ -465,6 +465,15 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
     return [NSString stringWithUTF8String:buffer];
 }
 
+/**
+ * Convert a hex string to NSData
+ * @param hexString Hex string representation (e.g., "00A4040007A0000002471001")
+ *                  Spaces are allowed and will be removed
+ * @return NSData containing the bytes, or nil if the string is invalid
+ *         Returns nil if:
+ *         - The string has an odd number of characters (after removing spaces)
+ *         - The string contains non-hex characters
+ */
 - (NSData *)hexStringToData:(NSString *)hexString {
     NSString *cleanHex = [hexString stringByReplacingOccurrencesOfString:@" " withString:@""];
     cleanHex = [cleanHex uppercaseString];
