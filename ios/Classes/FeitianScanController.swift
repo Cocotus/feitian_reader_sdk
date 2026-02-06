@@ -343,9 +343,9 @@ extension FeitianScanController: CBCentralManagerDelegate {
         
         // Deduplication logic (from demo line 144-153)
         deviceQueue.sync {
-            for model in discoveredList {
-                if model.name == deviceName {
-                    model.date = Date()
+            for i in 0..<discoveredList.count {
+                if discoveredList[i].name == deviceName {
+                    discoveredList[i].date = Date()
                     return
                 }
             }
