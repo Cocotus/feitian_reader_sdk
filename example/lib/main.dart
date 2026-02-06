@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:feitian_reader_sdk/feitian_reader_sdk.dart';
@@ -23,6 +24,7 @@ class _MyAppState extends State<MyApp> {
   final TextEditingController _apduController = TextEditingController();
   String? _deviceName;
   bool _isConnected = false;
+  StreamSubscription<Map<dynamic, dynamic>>? _eventSubscription;
 
   @override
   void initState() {
@@ -37,11 +39,12 @@ class _MyAppState extends State<MyApp> {
   @override
   void dispose() {
     _apduController.dispose();
+    _eventSubscription?.cancel();
     super.dispose();
   }
 
   void _setupEventStream() {
-    _feitianReaderPlugin.eventStream.listen((event) {
+    _eventSubscription = _feitianReaderPlugin.eventStream.listen((event) {
       setState(() {
         final eventType = event['event'];
         
