@@ -8,6 +8,7 @@
 #import "FeitianReaderSdkPlugin.h"
 #import "ScanDeviceController.h"
 #import "readerModel.h"
+#import <UIKit/UIKit.h>
 
 @interface FeitianReaderSdkPlugin () <ScanDeviceControllerDelegate>
 @property (nonatomic, strong) FlutterMethodChannel *channel;
