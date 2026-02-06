@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:feitian_reader_sdk/feitian_reader_sdk.dart';
@@ -19,13 +20,18 @@ class _MyAppState extends State<MyApp> {
   final _feitianReaderPlugin = FeitianReaderSdk();
   static const platform = MethodChannel('feitian_reader_sdk');
   final List<String> _logsAndData = [];
+  final List<String> _logs = [];
   final TextEditingController _apduController = TextEditingController();
+  String? _deviceName;
+  bool _isConnected = false;
+  StreamSubscription<Map<dynamic, dynamic>>? _eventSubscription;
 
   @override
   void initState() {
     super.initState();
     initPlatformState();
     platform.setMethodCallHandler(_handleMethodCall);
+    _setupEventStream();
     // Set default APDU command
     _apduController.text = '00A4040007A0000002471001';
   }
@@ -33,7 +39,42 @@ class _MyAppState extends State<MyApp> {
   @override
   void dispose() {
     _apduController.dispose();
+    _eventSubscription?.cancel();
     super.dispose();
+  }
+
+  void _setupEventStream() {
+    _eventSubscription = _feitianReaderPlugin.eventStream.listen((event) {
+      setState(() {
+        final eventType = event['event'];
+        
+        if (eventType == 'log') {
+          // Add log to display
+          _logs.insert(0, event['message']);
+          if (_logs.length > 100) {
+            _logs.removeLast();
+          }
+        } else if (eventType == 'deviceDiscovered') {
+          _deviceName = event['deviceName'];
+          _logs.insert(0, 'Device discovered: $_deviceName (RSSI: ${event['rssi']})');
+        } else if (eventType == 'readerConnected') {
+          _isConnected = true;
+          _logs.insert(0, 'Reader connected: ${event['deviceName']}');
+          _logs.insert(0, 'Available slots: ${event['slots']}');
+        } else if (eventType == 'readerDisconnected') {
+          _isConnected = false;
+          _logs.insert(0, 'Reader disconnected');
+        } else if (eventType == 'batteryLevel') {
+          _logs.insert(0, 'Battery level: ${event['level']}%');
+        } else if (eventType == 'cardInserted') {
+          _logs.insert(0, 'Card inserted in slot: ${event['slotName']}');
+        } else if (eventType == 'cardRemoved') {
+          _logs.insert(0, 'Card removed from slot: ${event['slotName']}');
+        } else if (eventType == 'error') {
+          _logs.insert(0, 'ERROR: ${event['error']}');
+        }
+      });
+    });
   }
 
   Future<void> _handleMethodCall(MethodCall call) async {
@@ -225,6 +266,43 @@ class _MyAppState extends State<MyApp> {
                 }),
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
                 child: const Text('Read Card UID'),
+              ),
+              const SizedBox(height: 16),
+              
+              // Event Logs Section
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Event Logs:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  TextButton(
+                    onPressed: () {
+                      setState(() {
+                        _logs.clear();
+                      });
+                    },
+                    child: const Text('Clear'),
+                  ),
+                ],
+              ),
+              const Divider(),
+              Container(
+                height: 200,
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: _logs.isEmpty
+                    ? const Center(child: Text('No event logs yet'))
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(8),
+                        itemCount: _logs.length,
+                        itemBuilder: (context, index) {
+                          return Text(
+                            _logs[index],
+                            style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+                          );
+                        },
+                      ),
               ),
               const SizedBox(height: 16),
               

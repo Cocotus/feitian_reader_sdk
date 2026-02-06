@@ -305,6 +305,23 @@ static NSString *gBluetoothID = @"";
     }
 }
 
+- (NSString *)getReaderModelName {
+    if (gContxtHandle == 0) {
+        return nil;
+    }
+    
+    unsigned int length = 0;
+    char buffer[100] = {0};
+    LONG ret = FtGetReaderName(gContxtHandle, &length, buffer);
+    
+    if (ret != SCARD_S_SUCCESS || length == 0) {
+        [self notifyError:[NSString stringWithFormat:@"Failed to get reader name: 0x%08lx", ret]];
+        return nil;
+    }
+    
+    return [NSString stringWithUTF8String:buffer];
+}
+
 #pragma mark - CBCentralManagerDelegate
 
 - (void)centralManagerDidUpdateState:(CBCentralManager *)central {
@@ -379,6 +396,18 @@ static NSString *gBluetoothID = @"";
         _slotarray = slotArray.count > 0 ? slotArray : nil;
         _connectedReaderName = _selectedDeviceName;
         
+        // Get reader name and battery level
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            NSString *readerModelName = [self getReaderModelName];
+            if (readerModelName) {
+                [self logMessage:[NSString stringWithFormat:@"Connected reader model: %@", readerModelName]];
+            }
+            
+            // Request battery level automatically
+            [self getBatteryLevel];
+        });
+        
+        // Notify Flutter about connection
         NSMutableArray<NSString *> *slotNames = [NSMutableArray array];
         for (NSString *slot in slotArray) {
             [slotNames addObject:slot];
@@ -390,6 +419,8 @@ static NSString *gBluetoothID = @"";
             [_delegate scanController:self didConnectReader:_selectedDeviceName slots:slotNames];
         }
     } else {
+        // IMPORTANT: Handle disconnection
+        [self logMessage:[NSString stringWithFormat:@"Reader disconnected: %@", _connectedReaderName]];
         [self disconnectReader];
     }
 }

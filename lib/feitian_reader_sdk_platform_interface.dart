@@ -50,4 +50,8 @@ abstract class FeitianReaderSdkPlatform extends PlatformInterface {
   Future<String?> powerOffCard() {
     throw UnimplementedError('powerOffCard() has not been implemented.');
   }
+
+  Stream<Map<dynamic, dynamic>> get eventStream {
+    throw UnimplementedError('eventStream has not been implemented.');
+  }
 }
