@@ -32,6 +32,7 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
 @property (nonatomic, strong) NSString *selectedDeviceName;
 @property (nonatomic, strong) NSString *connectedReaderName;
 @property (nonatomic, assign) BOOL isScanning;
+@property (nonatomic, assign) BOOL isReaderInterfaceInitialized;
 @property (nonatomic, strong) NSTimer *refreshTimer;
 @end
 
@@ -43,7 +44,9 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
         _deviceList = [NSMutableArray array];
         _discoveredList = [NSMutableArray array];
         _isScanning = NO;
-        [self initReaderInterface];
+        _isReaderInterfaceInitialized = NO;
+        // ✅ BUGFIX: Removed [self initReaderInterface] from init
+        // It must be called BEFORE SCardEstablishContext in startScanning
     }
     return self;
 }
@@ -68,14 +71,39 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
     [self logMessage:@"Starting Bluetooth scan"];
     _isScanning = YES;
     
-    // Initialize card context if needed
+    // ✅ BUGFIX: Initialize ReaderInterface BEFORE SCardEstablishContext
+    // This is required according to FEITIAN SDK documentation:
+    // "setAutoPair must be invoked before SCardEstablishContext"
+    if (!_isReaderInterfaceInitialized) {
+        [self initReaderInterface];
+        _isReaderInterfaceInitialized = YES;
+    }
+    
+    // Initialize card context if needed (AFTER initReaderInterface)
     if (gContxtHandle == 0) {
         ULONG ret = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &gContxtHandle);
         if (ret != 0) {
             [self notifyError:[NSString stringWithFormat:@"Failed to establish card context: 0x%08lx", ret]];
+            _isScanning = NO;
             return;
         } else {
             FtSetTimeout(gContxtHandle, 50000);
+            [self logMessage:@"Card context established successfully"];
+        }
+    } else {
+        // Context already exists, reset it to ensure proper initialization
+        [self logMessage:@"Resetting existing card context"];
+        SCardReleaseContext(gContxtHandle);
+        gContxtHandle = 0;
+        
+        ULONG ret = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &gContxtHandle);
+        if (ret != 0) {
+            [self notifyError:[NSString stringWithFormat:@"Failed to re-establish card context: 0x%08lx", ret]];
+            _isScanning = NO;
+            return;
+        } else {
+            FtSetTimeout(gContxtHandle, 50000);
+            [self logMessage:@"Card context re-established successfully"];
         }
     }
     
@@ -103,6 +131,17 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
         return;
     }
     
+    // Ensure SDK is properly initialized before connecting
+    if (!_isReaderInterfaceInitialized) {
+        [self notifyError:@"Reader interface not initialized. Please start scanning first."];
+        return;
+    }
+    
+    if (gContxtHandle == 0) {
+        [self notifyError:@"Card context not established. Please start scanning first."];
+        return;
+    }
+    
     [self logMessage:[NSString stringWithFormat:@"Connecting to reader: %@", readerName]];
     _selectedDeviceName = readerName;
     
@@ -112,6 +151,8 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
             dispatch_async(dispatch_get_main_queue(), ^{
                 [self notifyError:@"Failed to connect to reader"];
             });
+        } else {
+            [self logMessage:@"Reader connection initiated successfully"];
         }
     });
 }
@@ -301,12 +342,25 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
 #pragma mark - Private Methods
 
 - (void)initReaderInterface {
+    if (_interface) {
+        // Already initialized
+        [self logMessage:@"ReaderInterface already initialized"];
+        return;
+    }
+    
+    [self logMessage:@"Initializing ReaderInterface"];
     _interface = [[ReaderInterface alloc] init];
-    [_interface setAutoPair:NO];  // Manual connection mode
+    
+    // ✅ CRITICAL: setAutoPair MUST be called BEFORE SCardEstablishContext
+    // This ensures the SDK properly initializes the Bluetooth connection
+    // and sends the required WriteSerial command (0x6b04...) to the reader
+    [_interface setAutoPair:YES];  // Manual connection mode
     [_interface setDelegate:self];
     
     // Set device types to support
     [FTDeviceType setDeviceType:(FTDEVICETYPE)(IR301_AND_BR301 | BR301BLE_AND_BR500 | LINE_TYPEC)];
+    
+    [self logMessage:@"ReaderInterface initialized successfully"];
 }
 
 - (void)beginScanBLEDevice {
@@ -570,6 +624,8 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
         gBluetoothID = bluetoothID;
         _slotarray = slotArray.count > 0 ? slotArray : nil;
         _connectedReaderName = _selectedDeviceName;
+        
+        [self logMessage:@"✅ Reader connected successfully - WriteSerial command should have been sent"];
         
         // Get reader name and battery level
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
