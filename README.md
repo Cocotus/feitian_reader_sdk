@@ -25,6 +25,29 @@ dependencies:
     path: ../  # Adjust path as needed
 ```
 
+### iOS Configuration
+
+For iOS apps, you must add the following to your `Info.plist` file to support communication with FEITIAN card readers via the External Accessory framework:
+
+```xml
+<key>UISupportedExternalAccessoryProtocols</key>
+<array>
+    <string>com.ftsafe.bR301</string>
+    <string>com.ftsafe.iR301</string>
+</array>
+```
+
+You should also add Bluetooth permissions:
+
+```xml
+<key>NSBluetoothAlwaysUsageDescription</key>
+<string>This app needs Bluetooth access to connect to FEITIAN card readers</string>
+<key>NSBluetoothPeripheralUsageDescription</key>
+<string>This app needs Bluetooth access to connect to FEITIAN card readers</string>
+```
+
+These entries are required for the app to communicate with FEITIAN iR301 and bR301 card readers.
+
 ## Usage
 
 ### Basic Example
