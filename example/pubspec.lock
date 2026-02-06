@@ -154,7 +154,7 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.16.0"
-  orgacare_reader_sdk:
+  feitian_reader_sdk:
     dependency: "direct main"
     description:
       path: ".."
