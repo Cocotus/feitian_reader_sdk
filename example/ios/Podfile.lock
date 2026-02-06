@@ -2,26 +2,26 @@ PODS:
   - Flutter (1.0.0)
   - integration_test (0.0.1):
     - Flutter
-  - orgacare_reader_sdk (0.0.1):
+  - feitian_reader_sdk (0.0.1):
     - Flutter
 
 DEPENDENCIES:
   - Flutter (from `Flutter`)
   - integration_test (from `.symlinks/plugins/integration_test/ios`)
-  - orgacare_reader_sdk (from `.symlinks/plugins/orgacare_reader_sdk/ios`)
+  - feitian_reader_sdk (from `.symlinks/plugins/feitian_reader_sdk/ios`)
 
 EXTERNAL SOURCES:
   Flutter:
     :path: Flutter
   integration_test:
     :path: ".symlinks/plugins/integration_test/ios"
-  orgacare_reader_sdk:
-    :path: ".symlinks/plugins/orgacare_reader_sdk/ios"
+  feitian_reader_sdk:
+    :path: ".symlinks/plugins/feitian_reader_sdk/ios"
 
 SPEC CHECKSUMS:
   Flutter: e0871f40cf51350855a761d2e70bf5af5b9b5de7
   integration_test: 4a889634ef21a45d28d50d622cf412dc6d9f586e
-  orgacare_reader_sdk: dbb3a8bffe45dea879fdd1f787af74bb05876d60
+  feitian_reader_sdk: dbb3a8bffe45dea879fdd1f787af74bb05876d60
 
 PODFILE CHECKSUM: 819463e6a0290f5a72f145ba7cde16e8b6ef0796
 
