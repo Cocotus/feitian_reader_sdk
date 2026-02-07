@@ -7,6 +7,7 @@
 //
 
 #import <Foundation/Foundation.h>
+#import "EGKCardReader.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -37,7 +38,7 @@ NS_ASSUME_NONNULL_BEGIN
  * and card operations for FEITIAN card readers.
  * This is a non-UI version adapted for Flutter integration.
  */
-@interface ScanDeviceController : NSObject
+@interface ScanDeviceController : NSObject <EGKCardReaderDelegate>
 
 @property (nonatomic, weak, nullable) id<ScanDeviceControllerDelegate> delegate;
 @property (nonatomic, assign) BOOL batteryLoggedOnce;
