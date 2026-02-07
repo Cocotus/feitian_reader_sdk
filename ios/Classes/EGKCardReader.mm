@@ -679,8 +679,8 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
     // Following C# implementation: P1=0x00, P2=0x08, Le=vdLength
     [self logMessage:[NSString stringWithFormat:@"📤 APDU: Read VD Extended (00 B0 00 08) Le=%u [Single Read]", vdLength]];
     
-    // Build Extended Length APDU
-    uint8_t readVDExtended[8];
+    // Build Extended Length APDU (7 bytes total, not 8)
+    uint8_t readVDExtended[7];
     readVDExtended[0] = 0x00;  // CLA
     readVDExtended[1] = 0xB0;  // INS (READ BINARY)
     readVDExtended[2] = 0x00;  // P1 (high byte of offset = 0)
@@ -689,31 +689,71 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
     readVDExtended[5] = (vdLength >> 8) & 0xFF;  // Le byte 2 (high)
     readVDExtended[6] = vdLength & 0xFF;         // Le byte 3 (low)
     
+    // Log the complete APDU command
+    [self logMessage:[NSString stringWithFormat:@"🔍 Extended APDU Command: %02X %02X %02X %02X %02X %02X %02X",
+                     readVDExtended[0], readVDExtended[1], readVDExtended[2], readVDExtended[3],
+                     readVDExtended[4], readVDExtended[5], readVDExtended[6]]];
+    
     NSData *vdResponse = [self sendeAPDU:readVDExtended length:7];
     if (!vdResponse || ![self pruefeStatuswort:vdResponse]) {
         [self logError:@"❌ Fehler beim Lesen der VD-Daten (Extended)"];
         return nil;
     }
     
+    // Log raw response data (first and last 32 bytes)
+    NSUInteger responseLen = vdResponse.length;
+    if (responseLen > 0) {
+        NSUInteger firstBytes = MIN(32, responseLen);
+        NSUInteger lastStart = responseLen > 32 ? responseLen - 32 : 0;
+        NSData *firstData = [vdResponse subdataWithRange:NSMakeRange(0, firstBytes)];
+        NSData *lastData = lastStart > 0 ? [vdResponse subdataWithRange:NSMakeRange(lastStart, responseLen - lastStart)] : nil;
+        
+        [self logMessage:[NSString stringWithFormat:@"📦 Raw vdResponse length: %lu bytes", (unsigned long)responseLen]];
+        [self logMessage:[NSString stringWithFormat:@"📦 First 32 bytes: %@", [self dataToHexString:firstData]]];
+        if (lastData) {
+            [self logMessage:[NSString stringWithFormat:@"📦 Last 32 bytes: %@", [self dataToHexString:lastData]]];
+        }
+    }
+    
     // Remove status bytes
     NSData *vdData = [vdResponse subdataWithRange:NSMakeRange(0, vdResponse.length - 2)];
     [self logMessage:[NSString stringWithFormat:@"📥 VD gelesen: %lu Bytes (Extended Mode)", (unsigned long)vdData.length]];
     
+    // Log hex dump of vdData (first 128 bytes, 16 bytes per line)
+    if (vdData.length > 0) {
+        NSUInteger dumpBytes = MIN(128, vdData.length);
+        [self logMessage:[NSString stringWithFormat:@"🔍 VD Data hex dump (first %lu bytes):", (unsigned long)dumpBytes]];
+        const uint8_t *bytes = (const uint8_t *)vdData.bytes;
+        for (NSUInteger i = 0; i < dumpBytes; i += 16) {
+            NSMutableString *line = [NSMutableString stringWithFormat:@"  %04lX: ", (unsigned long)i];
+            NSUInteger lineEnd = MIN(i + 16, dumpBytes);
+            for (NSUInteger j = i; j < lineEnd; j++) {
+                [line appendFormat:@"%02X ", bytes[j]];
+            }
+            [self logMessage:line];
+        }
+    }
+    
     // Extract GZIP data
+    [self logMessage:@"🔧 Attempting to extract GZIP data from buffer..."];
     NSData *cleanedVdData = [self extractGZIPDataFromBuffer:vdData];
     if (!cleanedVdData) {
         [self logError:@"❌ Fehler beim Extrahieren der GZIP-Daten (VD Extended)"];
         return nil;
     }
+    [self logMessage:[NSString stringWithFormat:@"✅ GZIP data extracted: %lu bytes", (unsigned long)cleanedVdData.length]];
     
     // Decompress
+    [self logMessage:@"🔧 Attempting GZIP decompression..."];
     NSData *decompressedData = [self dekompromiereGZIP:cleanedVdData];
     if (!decompressedData) {
         [self logError:@"❌ Fehler bei GZIP-Dekomprimierung der VD-Daten (Extended)"];
         return nil;
     }
+    [self logMessage:[NSString stringWithFormat:@"✅ GZIP decompression successful: %lu bytes decompressed", (unsigned long)decompressedData.length]];
     
     // Try UTF-8 first
+    [self logMessage:@"🔧 Converting decompressed data to XML string..."];
     NSString *xmlString = [[NSString alloc] initWithData:decompressedData encoding:NSUTF8StringEncoding];
     
     // Fallback to ISO-8859-1 if UTF-8 fails
@@ -758,9 +798,24 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
         return nil;
     }
     
+    // Detect Extended APDU (7 bytes with Le field starting at byte 4)
+    BOOL isExtendedAPDU = (length == 7 && apdu[4] == 0x00);
+    
+    if (isExtendedAPDU) {
+        // Log Extended APDU details
+        uint16_t extendedLe = (apdu[5] << 8) | apdu[6];
+        [self logMessage:[NSString stringWithFormat:@"🔧 Extended APDU detected: CLA=%02X INS=%02X P1=%02X P2=%02X Le=%u", 
+                         apdu[0], apdu[1], apdu[2], apdu[3], extendedLe]];
+        
+        // Pre-delay for BLE connection stability
+        [NSThread sleepForTimeInterval:0.1];  // 100ms
+    }
+    
     // Vorbereitung für SCardTransmit
+    // Buffer size increased to 2048 + 128 bytes to match iReader demo
     SCARD_IO_REQUEST pioSendPci = {SCARD_PROTOCOL_T1, sizeof(SCARD_IO_REQUEST)};
-    BYTE recvBuffer[2048];
+    BYTE recvBuffer[2048 + 128];
+    memset(recvBuffer, 0, sizeof(recvBuffer));  // Clear buffer to prevent stale data
     DWORD recvLength = sizeof(recvBuffer);
     
     // APDU senden
@@ -769,6 +824,12 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
     if (ret != SCARD_S_SUCCESS) {
         [self logError:[NSString stringWithFormat:@"❌ SCardTransmit Fehler: 0x%08lx", ret]];
         return nil;
+    }
+    
+    if (isExtendedAPDU) {
+        // Post-delay for BLE packet assembly
+        [NSThread sleepForTimeInterval:0.3];  // 300ms for multi-packet assembly
+        [self logMessage:[NSString stringWithFormat:@"📦 Extended APDU response received: %lu bytes", (unsigned long)recvLength]];
     }
     
     if (recvLength < 2) {
