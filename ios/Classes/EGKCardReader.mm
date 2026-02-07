@@ -496,7 +496,7 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
 - (nullable NSString *)leseVersichertendaten {
     [self logMessage:@"📤 APDU: Read VD Length (00 B0 82 00 08)"];
     
-    // Schritt 9.1: Länge der VD-Daten auslesen
+    // Step 1: Read VD pointer structure (8 bytes)
     NSData *lengthResponse = [self sendeAPDU:APDU_READ_VD_LENGTH length:sizeof(APDU_READ_VD_LENGTH)];
     if (!lengthResponse || ![self pruefeStatuswort:lengthResponse]) {
         return nil;
@@ -517,22 +517,46 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
     uint16_t gdvStart = (bytes[4] << 8) | bytes[5];   // GDV container start
     uint16_t gdvEnd = (bytes[6] << 8) | bytes[7];     // GDV container end
     
-    // Calculate actual VD length
-    uint16_t vdLength = vdEnd - vdStart;
+    // Calculate VD length from pointer structure
+    uint16_t vdLengthFromPointer = vdEnd - vdStart;
     
-    [self logMessage:[NSString stringWithFormat:@"📊 VD-Container: Start=%u, End=%u, Length=%u", 
-                     vdStart, vdEnd, vdLength]];
+    [self logMessage:[NSString stringWithFormat:@"📊 VD-Container: Start=%u, End=%u, Length=%u (from pointer)", 
+                     vdStart, vdEnd, vdLengthFromPointer]];
     [self logMessage:[NSString stringWithFormat:@"📊 GDV-Container: Start=%u, End=%u", 
                      gdvStart, gdvEnd]];
+    
+    // Step 2: Read ACTUAL VD data length from offset 0x8100 (matching PD approach)
+    // This is the reliable method used successfully for PD data
+    uint8_t readVDLengthCmd[] = {0x00, 0xB0, 0x81, 0x00, 0x02};  // Read 2 bytes from offset 0x8100
+    [self logMessage:@"📤 APDU: Read VD Actual Length (00 B0 81 00 02)"];
+    
+    NSData *actualLengthResponse = [self sendeAPDU:readVDLengthCmd length:sizeof(readVDLengthCmd)];
+    uint16_t vdLength;
+    if (!actualLengthResponse || ![self pruefeStatuswort:actualLengthResponse]) {
+        [self logMessage:@"⚠️ Could not read actual VD length, falling back to pointer-based calculation"];
+        vdLength = vdLengthFromPointer;
+    } else {
+        const uint8_t *lengthBytes = (const uint8_t *)actualLengthResponse.bytes;
+        uint16_t actualVDLength = (lengthBytes[0] << 8) | lengthBytes[1];
+        [self logMessage:[NSString stringWithFormat:@"📊 VD Actual Length: %u bytes (from offset 0x8100)", actualVDLength]];
+        
+        // Validate: pointer-based vs actual length
+        if (actualVDLength != vdLengthFromPointer) {
+            [self logMessage:[NSString stringWithFormat:@"⚠️ Length mismatch: pointer=%u, actual=%u (using actual)", 
+                            vdLengthFromPointer, actualVDLength]];
+        }
+        vdLength = actualVDLength;  // Use the actual length
+    }
     
     if (vdLength == 0 || vdLength > MAX_VD_DATA_LENGTH) {
         [self logError:[NSString stringWithFormat:@"❌ Ungültige VD-Länge: %u", vdLength]];
         return nil;
     }
     
-    // Schritt 9.2: VD-Daten in mehreren Chunks auslesen (Le=0x00 bedeutet max. 256 Bytes)
+    // Step 3: Read VD data starting from offset 0x8102 (after the 2-byte length at 0x8100)
+    // This matches the PD approach which reads from offset 0x0002 relative to 0x8100
     NSMutableData *fullData = [NSMutableData data];
-    uint16_t offset = vdStart; // Read VD data starting from vdStart position
+    uint16_t offset = 0x8102;  // Start reading GZIP data after the 2-byte length header
     
     while (fullData.length < vdLength) {
         uint16_t remainingBytes = vdLength - (uint16_t)fullData.length;
@@ -540,7 +564,6 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
         
         uint8_t p1 = (offset >> 8) & 0xFF;
         uint8_t p2 = offset & 0xFF;
-        // Le=0x00 means "read 256 bytes", otherwise use actual chunk size
         uint8_t le = (chunkSize == 256) ? 0x00 : (uint8_t)chunkSize;
         
         uint8_t readVDCmd[] = {0x00, 0xB0, p1, p2, le};
@@ -548,11 +571,22 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
         [self logMessage:[NSString stringWithFormat:@"📤 APDU: Read VD Chunk (00 B0 %02X %02X %02X)", p1, p2, le]];
         NSData *chunkResponse = [self sendeAPDU:readVDCmd length:sizeof(readVDCmd)];
         if (!chunkResponse || ![self pruefeStatuswort:chunkResponse]) {
+            [self logError:[NSString stringWithFormat:@"❌ Failed to read VD chunk at offset %04X", offset]];
             return nil;
         }
         
-        // Entferne Status-Bytes und füge Chunk hinzu
         NSData *chunk = [chunkResponse subdataWithRange:NSMakeRange(0, chunkResponse.length - 2)];
+        
+        // Validate chunk boundaries
+        if (fullData.length == 0) {
+            // First chunk should start with GZIP magic number
+            const uint8_t *chunkBytes = (const uint8_t *)chunk.bytes;
+            if (chunk.length >= 4) {
+                [self logMessage:[NSString stringWithFormat:@"🔍 First chunk header: %02X %02X %02X %02X", 
+                                chunkBytes[0], chunkBytes[1], chunkBytes[2], chunkBytes[3]]];
+            }
+        }
+        
         [fullData appendData:chunk];
         offset += chunk.length;
         
@@ -564,10 +598,25 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
     
     NSData *vdData = fullData;
     
+    // Validate total data length
+    if (vdData.length != vdLength) {
+        [self logError:[NSString stringWithFormat:@"❌ VD data length mismatch: expected %u, got %lu", 
+                       vdLength, (unsigned long)vdData.length]];
+        // Log the data for debugging
+        NSString *hexDump = [self dataToHexString:[vdData subdataWithRange:NSMakeRange(0, MIN(128, vdData.length))]];
+        [self logMessage:[NSString stringWithFormat:@"🔍 First 128 bytes of VD data: %@", hexDump]];
+    }
+    
     // Extract GZIP data from buffer (removes protocol wrappers)
     NSData *cleanedVdData = [self extractGZIPDataFromBuffer:vdData];
     if (!cleanedVdData) {
         [self logError:@"❌ Fehler beim Extrahieren der GZIP-Daten (VD)"];
+        return nil;
+    }
+    
+    // Additional validation: check GZIP stream completeness
+    if (![self validateGZIPStream:cleanedVdData]) {
+        [self logError:@"❌ GZIP stream validation failed"];
         return nil;
     }
     
@@ -821,6 +870,36 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
                      (unsigned long)cleanedData.length]];
     
     return cleanedData;
+}
+
+/**
+ * Validates GZIP stream integrity before decompression
+ * @param data GZIP compressed data
+ * @return YES if stream appears valid, NO otherwise
+ */
+- (BOOL)validateGZIPStream:(NSData *)data {
+    // Minimum valid GZIP: 10-byte header + 8-byte footer = 18 bytes total
+    if (data.length < 18) {
+        [self logError:[NSString stringWithFormat:@"❌ GZIP data too short: %lu bytes (minimum 18)", (unsigned long)data.length]];
+        return NO;
+    }
+    
+    const uint8_t *bytes = (const uint8_t *)data.bytes;
+    
+    // Check magic number (bytes 0-1)
+    if (bytes[0] != 0x1F || bytes[1] != 0x8B) {
+        [self logError:[NSString stringWithFormat:@"❌ Invalid GZIP magic: %02X %02X", bytes[0], bytes[1]]];
+        return NO;
+    }
+    
+    // Check compression method (byte 2, should be 08 for DEFLATE)
+    if (bytes[2] != 0x08) {
+        [self logError:[NSString stringWithFormat:@"❌ Invalid compression method: %02X", bytes[2]]];
+        return NO;
+    }
+    
+    [self logMessage:[NSString stringWithFormat:@"✅ GZIP stream validation passed (%lu bytes)", (unsigned long)data.length]];
+    return YES;
 }
 
 /**
