@@ -2,8 +2,8 @@
 //  ScanDeviceController.mm
 //  feitian_reader_sdk
 //
-//  Simplified non-UI implementation for Flutter integration
-//  Based on FEITIAN iReader demo code
+//  Vereinfachte Implementierung ohne UI für Flutter-Integration
+//  Basierend auf FEITIAN iReader Demo-Code
 //
 
 #import "ScanDeviceController.h"
@@ -12,16 +12,16 @@
 #import <CoreBluetooth/CoreBluetooth.h>
 #import "readerModel.h"
 
-// Global context and card handle
+// Globaler Kontext und Kartenhandle
 static SCARDCONTEXT gContxtHandle = 0;
 static SCARDHANDLE gCardHandle = 0;
 static NSString *gBluetoothID = @"";
 
-// Constants for APDU operations
-static const NSUInteger MIN_APDU_LENGTH = 8; // Minimum hex string length (4 bytes: CLA INS P1 P2)
+// Konstanten für APDU-Operationen
+static const NSUInteger MIN_APDU_LENGTH = 8; // Minimale Hex-String-Länge (4 Bytes: CLA INS P1 P2)
 static const NSUInteger MAX_APDU_RESPONSE_SIZE = 2048 + 128;
-static const NSTimeInterval APDU_COMMAND_DELAY = 0.05; // Delay between sequential commands
-static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying battery after connection
+static const NSTimeInterval APDU_COMMAND_DELAY = 0.05; // Verzögerung zwischen aufeinanderfolgenden Befehlen
+static const NSTimeInterval READER_READY_DELAY = 0.5; // Verzögerung vor Batterieabfrage nach Verbindung
 
 @interface ScanDeviceController () <ReaderInterfaceDelegate, CBCentralManagerDelegate>
 @property (nonatomic, strong) CBCentralManager *central;
@@ -45,8 +45,8 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
         _discoveredList = [NSMutableArray array];
         _isScanning = NO;
         _isReaderInterfaceInitialized = NO;
-        // ✅ BUGFIX: Removed [self initReaderInterface] from init
-        // It must be called BEFORE SCardEstablishContext in startScanning
+        // ✅ BUGFIX: [self initReaderInterface] aus init entfernt
+        // Es muss VOR SCardEstablishContext in startScanning aufgerufen werden
     }
     return self;
 }
@@ -64,53 +64,53 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
 
 - (void)startScanning {
     if (_isScanning) {
-        [self logMessage:@"Already scanning"];
+        [self logMessage:@"Scan läuft bereits"];
         return;
     }
     
-    [self logMessage:@"Starting Bluetooth scan"];
+    [self logMessage:@"Starte Bluetooth-Scan"];
     _isScanning = YES;
     
-    // ✅ BUGFIX: Initialize ReaderInterface BEFORE SCardEstablishContext
-    // This is required according to FEITIAN SDK documentation:
-    // "setAutoPair must be invoked before SCardEstablishContext"
+    // ✅ BUGFIX: ReaderInterface VOR SCardEstablishContext initialisieren
+    // Dies ist laut FEITIAN SDK-Dokumentation erforderlich:
+    // "setAutoPair muss vor SCardEstablishContext aufgerufen werden"
     if (!_isReaderInterfaceInitialized) {
         [self initReaderInterface];
         _isReaderInterfaceInitialized = YES;
     }
     
-    // Initialize card context if needed (AFTER initReaderInterface)
+    // Kartenkontext initialisieren falls erforderlich (NACH initReaderInterface)
     if (gContxtHandle == 0) {
         ULONG ret = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &gContxtHandle);
         if (ret != 0) {
-            [self notifyError:[NSString stringWithFormat:@"Failed to establish card context: 0x%08lx", ret]];
+            [self notifyError:[NSString stringWithFormat:@"Fehler beim Herstellen des Kartenkontexts: 0x%08lx", ret]];
             _isScanning = NO;
             return;
         } else {
             FtSetTimeout(gContxtHandle, 50000);
-            [self logMessage:@"Card context established successfully"];
+            [self logMessage:@"Kartenkontext erfolgreich hergestellt"];
         }
     } else {
-        // Context already exists, reset it to ensure proper initialization
-        [self logMessage:@"Resetting existing card context"];
+        // Kontext existiert bereits, zurücksetzen um korrekte Initialisierung sicherzustellen
+        [self logMessage:@"Setze vorhandenen Kartenkontext zurück"];
         SCardReleaseContext(gContxtHandle);
         gContxtHandle = 0;
         
         ULONG ret = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &gContxtHandle);
         if (ret != 0) {
-            [self notifyError:[NSString stringWithFormat:@"Failed to re-establish card context: 0x%08lx", ret]];
+            [self notifyError:[NSString stringWithFormat:@"Fehler beim erneuten Herstellen des Kartenkontexts: 0x%08lx", ret]];
             _isScanning = NO;
             return;
         } else {
             FtSetTimeout(gContxtHandle, 50000);
-            [self logMessage:@"Card context re-established successfully"];
+            [self logMessage:@"Kartenkontext erfolgreich erneut hergestellt"];
         }
     }
     
-    // Start Bluetooth scanning
+    // Starte Bluetooth-Scan
     [self beginScanBLEDevice];
     
-    // Start refresh timer to clean up old devices
+    // Starte Refresh-Timer um alte Geräte zu entfernen
     [self startRefreshTimer];
 }
 
@@ -119,7 +119,7 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
         return;
     }
     
-    [self logMessage:@"Stopping Bluetooth scan"];
+    [self logMessage:@"Stoppe Bluetooth-Scan"];
     _isScanning = NO;
     [self stopScanBLEDevice];
     [self stopRefreshTimer];
@@ -127,84 +127,84 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
 
 - (void)connectToReader:(NSString *)readerName {
     if (!readerName || readerName.length == 0) {
-        [self notifyError:@"Reader name is required"];
+        [self notifyError:@"Kartenlesername erforderlich"];
         return;
     }
     
-    // Ensure SDK is properly initialized before connecting
+    // Sicherstellen, dass SDK vor Verbindung korrekt initialisiert ist
     if (!_isReaderInterfaceInitialized) {
-        [self notifyError:@"Reader interface not initialized. Please start scanning first."];
+        [self notifyError:@"Kartenleser-Schnittstelle nicht initialisiert. Bitte starten Sie zuerst den Scan."];
         return;
     }
     
     if (gContxtHandle == 0) {
-        [self notifyError:@"Card context not established. Please start scanning first."];
+        [self notifyError:@"Kartenkontext nicht hergestellt. Bitte starten Sie zuerst den Scan."];
         return;
     }
     
-    [self logMessage:[NSString stringWithFormat:@"Connecting to reader: %@", readerName]];
+    [self logMessage:[NSString stringWithFormat:@"Verbinde mit Kartenleser: %@", readerName]];
     _selectedDeviceName = readerName;
     
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         BOOL success = [self.interface connectPeripheralReader:readerName timeout:15];
         if (!success) {
             dispatch_async(dispatch_get_main_queue(), ^{
-                [self notifyError:@"Failed to connect to reader"];
+                [self notifyError:@"Verbindung zum Kartenleser fehlgeschlagen"];
             });
         } else {
-            [self logMessage:@"Reader connection initiated successfully"];
+            [self logMessage:@"Kartenleserverbindung erfolgreich initiiert"];
         }
     });
 }
 
 - (void)disconnectReader {
     if (_connectedReaderName) {
-        [self logMessage:[NSString stringWithFormat:@"Disconnecting from reader: %@", _connectedReaderName]];
+        [self logMessage:[NSString stringWithFormat:@"Trenne Verbindung zu Kartenleser: %@", _connectedReaderName]];
         
-        // Disconnect card if connected
+        // Karte trennen falls verbunden
         if (gCardHandle != 0) {
-            [self logMessage:@"Disconnecting card..."];
+            [self logMessage:@"Trenne Karte..."];
             SCardDisconnect(gCardHandle, SCARD_LEAVE_CARD);
             gCardHandle = 0;
         }
         
-        // Disconnect Bluetooth reader
+        // Bluetooth-Kartenleser trennen
         if (_interface && gBluetoothID.length > 0) {
-            [self logMessage:[NSString stringWithFormat:@"Disconnecting Bluetooth reader: %@", gBluetoothID]];
-            [_interface disConnectCurrentPeripheralReader];  // ✅ CORRECT
+            [self logMessage:[NSString stringWithFormat:@"Trenne Bluetooth-Kartenleser: %@", gBluetoothID]];
+            [_interface disConnectCurrentPeripheralReader];  // ✅ KORREKT
         }
         
-        // Clear state
+        // Status zurücksetzen
         _connectedReaderName = nil;
         gBluetoothID = @"";
         _slotarray = nil;
         _batteryLoggedOnce = NO;
         
-        // Notify Flutter
+        // Flutter benachrichtigen
         if ([_delegate respondsToSelector:@selector(scanControllerDidDisconnectReader:)]) {
             [_delegate scanControllerDidDisconnectReader:self];
         }
         
-        [self logMessage:@"Reader disconnected successfully"];
+        [self logMessage:@"Kartenleser erfolgreich getrennt"];
     } else {
-        [self logMessage:@"No reader connected to disconnect"];
+        [self logMessage:@"Kein Kartenleser zum Trennen verbunden"];
     }
 }
 
 - (void)getBatteryLevel {
-    [self logMessage:@"Getting battery level"];
-    // Battery level will be received via didGetBattery: delegate callback
+    [self logMessage:@"Rufe Batteriestand ab"];
+    // Batteriestand wird über didGetBattery: Delegate-Callback empfangen
 }
 
 - (void)powerOnCard {
-    [self logMessage:@"Powering on card"];
+    [self logMessage:@"Schalte Karte ein"];
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         [self connectCard];
     });
 }
 
 - (void)powerOffCard {
-    [self logMessage:@"Powering off card"];
+    [self logMessage:@"Schalte Karte aus"];
     if (gCardHandle != 0) {
         SCardDisconnect(gCardHandle, SCARD_LEAVE_CARD);
         gCardHandle = 0;
@@ -312,80 +312,80 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
 }
 
 - (void)readEGKCardOnDemand {
-    [self logMessage:@"Starting on-demand EGK card reading workflow"];
+    [self logMessage:@"Starte On-Demand EGK-Kartenauslesung"];
     
-    // ✅ FIX: Ensure SDK is initialized before reading
-    // This mirrors the old demo implementation's viewWillAppear logic
+    // ✅ FIX: Sicherstellen, dass SDK vor dem Auslesen initialisiert ist
+    // Dies entspricht der viewWillAppear-Logik der alten Demo-Implementierung
     if (!_isReaderInterfaceInitialized) {
-        [self logMessage:@"Reader interface not initialized, initializing now..."];
+        [self logMessage:@"Kartenleser-Schnittstelle nicht initialisiert, initialisiere jetzt..."];
         [self initReaderInterface];
         _isReaderInterfaceInitialized = YES;
     }
     
-    // ✅ FIX: Ensure card context is established
+    // ✅ FIX: Sicherstellen, dass Kartenkontext hergestellt ist
     if (gContxtHandle == 0) {
-        [self logMessage:@"Card context not established, establishing now..."];
+        [self logMessage:@"Kartenkontext nicht hergestellt, stelle jetzt her..."];
         ULONG ret = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &gContxtHandle);
         if (ret != 0) {
-            [self notifyError:[NSString stringWithFormat:@"Failed to establish card context: 0x%08lx", ret]];
+            [self notifyError:[NSString stringWithFormat:@"Fehler beim Herstellen des Kartenkontexts: 0x%08lx", ret]];
             return;
         } else {
             FtSetTimeout(gContxtHandle, 50000);
-            [self logMessage:@"Card context established successfully"];
+            [self logMessage:@"Kartenkontext erfolgreich hergestellt"];
         }
     }
     
-    // Step 1: Check if reader is connected
+    // Schritt 1: Prüfen ob Kartenleser verbunden ist
     if (!_connectedReaderName || _connectedReaderName.length == 0) {
-        [self logMessage:@"No reader connected"];
+        [self logMessage:@"Kein Kartenleser verbunden"];
         [self notifyNoBluetooth];
         return;
     }
     
-    // Step 2: Reader is connected, check if card is inserted
+    // Schritt 2: Kartenleser ist verbunden, prüfe ob Karte eingesteckt ist
     NSString *reader = [self getReaderList];
     if (!reader) {
-        [self logMessage:@"No reader available for card connection"];
+        [self logMessage:@"Kein Kartenleser für Kartenverbindung verfügbar"];
         [self notifyNoBluetooth];
         return;
     }
     
-    // Step 3: Try to connect to card (this will fail if no card is inserted)
+    // Schritt 3: Versuche Verbindung zur Karte herzustellen (schlägt fehl wenn keine Karte eingesteckt ist)
     DWORD dwActiveProtocol = -1;
-    [self logMessage:@"Checking for card..."];
+    [self logMessage:@"Prüfe auf Karte..."];
     LONG ret = SCardConnect(gContxtHandle, [reader UTF8String], SCARD_SHARE_SHARED,
                            SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1, &gCardHandle, &dwActiveProtocol);
     
     if (ret != SCARD_S_SUCCESS) {
-        [self logMessage:[NSString stringWithFormat:@"No card found: 0x%08lx", ret]];
+        [self logMessage:[NSString stringWithFormat:@"Keine Karte gefunden: 0x%08lx", ret]];
         [self notifyNoDataMobileMode];
         return;
     }
     
-    [self logMessage:@"Card found and connected"];
+    [self logMessage:@"Karte gefunden und verbunden"];
     
-    // Step 4: Read EGK card using existing logic
+    // Schritt 4: EGK-Karte mit vorhandener Logik auslesen
     [self readEGKCard];
 }
 
 - (void)sendApduCommand:(NSString *)apduString {
     if (!apduString || apduString.length < MIN_APDU_LENGTH) {
-        [self notifyError:@"Invalid APDU command"];
+        [self notifyError:@"Ungültiger APDU-Befehl"];
         return;
     }
     
     if (gCardHandle == 0) {
-        [self notifyError:@"No card connected"];
+        [self notifyError:@"Keine Karte verbunden"];
         return;
     }
     
-    [self logMessage:[NSString stringWithFormat:@"Sending APDU: %@", apduString]];
+    [self logMessage:[NSString stringWithFormat:@"Sende APDU: %@", apduString]];
     
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        // Convert hex string to bytes
+        // Konvertiere Hex-String zu Bytes
         NSData *apduData = [self hexStringToData:apduString];
         if (!apduData) {
-            [self notifyError:@"Failed to parse APDU command"];
+            [self notifyError:@"Fehler beim Parsen des APDU-Befehls"];
             return;
         }
         
@@ -396,24 +396,24 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
         memset(resp, 0, sizeof(resp));
         unsigned int resplen = sizeof(resp);
         
-        // Send APDU to card
+        // APDU an Karte senden
         SCARD_IO_REQUEST pioSendPci;
         LONG ret = SCardTransmit(gCardHandle, &pioSendPci, capdu, capdulen, NULL, resp, &resplen);
         
         if (ret != SCARD_S_SUCCESS) {
-            [self notifyError:[NSString stringWithFormat:@"APDU transmission failed: 0x%08lx", ret]];
+            [self notifyError:[NSString stringWithFormat:@"APDU-Übertragung fehlgeschlagen: 0x%08lx", ret]];
             return;
         }
         
-        // Convert response to hex string
+        // Antwort zu Hex-String konvertieren
         NSMutableString *responseHex = [NSMutableString string];
         for (unsigned int i = 0; i < resplen; i++) {
             [responseHex appendFormat:@"%02X", resp[i]];
         }
         
-        [self logMessage:[NSString stringWithFormat:@"APDU Response: %@", responseHex]];
+        [self logMessage:[NSString stringWithFormat:@"APDU-Antwort: %@", responseHex]];
         
-        // Notify delegate
+        // Delegate benachrichtigen
         if ([_delegate respondsToSelector:@selector(scanController:didReceiveApduResponse:)]) {
             [_delegate scanController:self didReceiveApduResponse:responseHex];
         }
@@ -427,7 +427,7 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
         if (completion) {
             completion(nil, [NSError errorWithDomain:@"FeitianReaderSDK"
                                                 code:-1
-                                            userInfo:@{NSLocalizedDescriptionKey: @"No APDU commands provided"}]);
+                                            userInfo:@{NSLocalizedDescriptionKey: @"Keine APDU-Befehle angegeben"}]);
         }
         return;
     }
@@ -436,24 +436,24 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
         if (completion) {
             completion(nil, [NSError errorWithDomain:@"FeitianReaderSDK"
                                                 code:-2
-                                            userInfo:@{NSLocalizedDescriptionKey: @"No card connected"}]);
+                                            userInfo:@{NSLocalizedDescriptionKey: @"Keine Karte verbunden"}]);
         }
         return;
     }
     
-    [self logMessage:[NSString stringWithFormat:@"Sending %lu APDU commands sequentially", (unsigned long)apduCommands.count]];
+    [self logMessage:[NSString stringWithFormat:@"Sende %lu APDU-Befehle sequenziell", (unsigned long)apduCommands.count]];
     
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         NSMutableArray *responses = [NSMutableArray array];
         NSError *error = nil;
         
         for (NSString *apduString in apduCommands) {
-            // Convert hex string to bytes
+            // Konvertiere Hex-String zu Bytes
             NSData *apduData = [self hexStringToData:apduString];
             if (!apduData) {
                 error = [NSError errorWithDomain:@"FeitianReaderSDK"
                                             code:-3
-                                        userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Failed to parse APDU: %@", apduString]}];
+                                        userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Fehler beim Parsen des APDU: %@", apduString]}];
                 break;
             }
             
@@ -464,39 +464,39 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
             memset(resp, 0, sizeof(resp));
             unsigned int resplen = sizeof(resp);
             
-            [self logMessage:[NSString stringWithFormat:@"Sending APDU [%lu/%lu]: %@",
+            [self logMessage:[NSString stringWithFormat:@"Sende APDU [%lu/%lu]: %@",
                              (unsigned long)([apduCommands indexOfObject:apduString] + 1),
                              (unsigned long)apduCommands.count,
                              apduString]];
             
-            // Send APDU to card
+            // Sende APDU an Karte
             SCARD_IO_REQUEST pioSendPci;
             LONG ret = SCardTransmit(gCardHandle, &pioSendPci, capdu, capdulen, NULL, resp, &resplen);
             
             if (ret != SCARD_S_SUCCESS) {
                 error = [NSError errorWithDomain:@"FeitianReaderSDK"
                                             code:ret
-                                        userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"APDU failed: 0x%08lx", ret]}];
+                                        userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"APDU fehlgeschlagen: 0x%08lx", ret]}];
                 break;
             }
             
-            // Convert response to hex string
+            // Konvertiere Antwort zu Hex-String
             NSMutableString *responseHex = [NSMutableString string];
             for (unsigned int i = 0; i < resplen; i++) {
                 [responseHex appendFormat:@"%02X", resp[i]];
             }
             
             [responses addObject:responseHex];
-            [self logMessage:[NSString stringWithFormat:@"Response [%lu/%lu]: %@",
+            [self logMessage:[NSString stringWithFormat:@"Antwort [%lu/%lu]: %@",
                              (unsigned long)responses.count,
                              (unsigned long)apduCommands.count,
                              responseHex]];
             
-            // Small delay between commands
+            // Kurze Verzögerung zwischen Befehlen
             [NSThread sleepForTimeInterval:APDU_COMMAND_DELAY];
         }
         
-        // Call completion on main thread
+        // Completion auf Main-Thread aufrufen
         dispatch_async(dispatch_get_main_queue(), ^{
             if (completion) {
                 completion(error ? nil : responses, error);
@@ -509,24 +509,24 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
 
 - (void)initReaderInterface {
     if (_interface) {
-        // Already initialized
-        [self logMessage:@"ReaderInterface already initialized"];
+        // Bereits initialisiert
+        [self logMessage:@"ReaderInterface bereits initialisiert"];
         return;
     }
     
-    [self logMessage:@"Initializing ReaderInterface"];
+    [self logMessage:@"Initialisiere ReaderInterface"];
     _interface = [[ReaderInterface alloc] init];
     
-    // ✅ CRITICAL: setAutoPair MUST be called BEFORE SCardEstablishContext
-    // This ensures the SDK properly initializes the Bluetooth connection
-    // and sends the required WriteSerial command (0x6b04...) to the reader
-    [_interface setAutoPair:YES];  // Manual connection mode
+    // ✅ KRITISCH: setAutoPair MUSS VOR SCardEstablishContext aufgerufen werden
+    // Dies stellt sicher, dass das SDK die Bluetooth-Verbindung korrekt initialisiert
+    // und den erforderlichen WriteSerial-Befehl (0x6b04...) an den Leser sendet
+    [_interface setAutoPair:YES];  // Manueller Verbindungsmodus
     [_interface setDelegate:self];
     
-    // Set device types to support
+    // Unterstützte Gerätetypen festlegen
     [FTDeviceType setDeviceType:(FTDEVICETYPE)(IR301_AND_BR301 | BR301BLE_AND_BR500 | LINE_TYPEC)];
     
-    [self logMessage:@"ReaderInterface initialized successfully"];
+    [self logMessage:@"ReaderInterface erfolgreich initialisiert"];
 }
 
 - (void)beginScanBLEDevice {
@@ -584,7 +584,7 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
     NSString *reader = [self getReaderList];
     
     if (!reader) {
-        [self notifyError:@"No reader available"];
+        [self notifyError:@"Kein Kartenleser verfügbar"];
         return;
     }
     
@@ -592,7 +592,7 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
                            SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1, &gCardHandle, &dwActiveProtocol);
     
     if (ret != 0) {
-        [self notifyError:[NSString stringWithFormat:@"Failed to connect to card: 0x%08lx", ret]];
+        [self notifyError:[NSString stringWithFormat:@"Verbindung zur Karte fehlgeschlagen: 0x%08lx", ret]];
         return;
     }
     
@@ -600,10 +600,10 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
     DWORD len = sizeof(patr);
     ret = SCardGetAttrib(gCardHandle, NULL, patr, &len);
     if (ret != SCARD_S_SUCCESS) {
-        [self logMessage:[NSString stringWithFormat:@"SCardGetAttrib warning: 0x%08lx", ret]];
+        [self logMessage:[NSString stringWithFormat:@"SCardGetAttrib Warnung: 0x%08lx", ret]];
     }
     
-    [self logMessage:@"Card powered on successfully"];
+    [self logMessage:@"Karte erfolgreich eingeschaltet"];
 }
 
 - (NSString *)getReaderList {
@@ -617,7 +617,7 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
     LPSTR readers = (LPSTR)malloc(readerLength * sizeof(char));
     ret = SCardListReaders(gContxtHandle, nil, readers, &readerLength);
     if (ret != 0) {
-        [self notifyError:[NSString stringWithFormat:@"Failed to list readers: 0x%08lx", ret]];
+        [self notifyError:[NSString stringWithFormat:@"Fehler beim Auflisten der Kartenleser: 0x%08lx", ret]];
         free(readers);
         return nil;
     }
@@ -642,7 +642,7 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
 }
 
 - (void)refreshDeviceList {
-    // Remove devices that haven't been seen in the last second
+    // Entferne Geräte, die in der letzten Sekunde nicht mehr gesehen wurden
     NSArray *tempList = [_discoveredList copy];
     NSDate *now = [NSDate date];
     for (readerModel *model in tempList) {
@@ -678,7 +678,7 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
     LONG ret = FtGetReaderName(gContxtHandle, &length, buffer);
     
     if (ret != SCARD_S_SUCCESS || length == 0) {
-        [self notifyError:[NSString stringWithFormat:@"Failed to get reader name: 0x%08lx", ret]];
+        [self notifyError:[NSString stringWithFormat:@"Fehler beim Abrufen des Kartenlesernamens: 0x%08lx", ret]];
         return nil;
     }
     
@@ -686,13 +686,13 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
 }
 
 /**
- * Convert a hex string to NSData
- * @param hexString Hex string representation (e.g., "00A4040007A0000002471001")
- *                  Spaces are allowed and will be removed
- * @return NSData containing the bytes, or nil if the string is invalid
- *         Returns nil if:
- *         - The string has an odd number of characters (after removing spaces)
- *         - The string contains non-hex characters
+ * Konvertiert einen Hex-String zu NSData
+ * @param hexString Hex-String-Darstellung (z.B. "00A4040007A0000002471001")
+ *                  Leerzeichen sind erlaubt und werden entfernt
+ * @return NSData mit den Bytes, oder nil wenn der String ungültig ist
+ *         Gibt nil zurück wenn:
+ *         - Der String eine ungerade Anzahl an Zeichen hat (nach Entfernung der Leerzeichen)
+ *         - Der String Nicht-Hex-Zeichen enthält
  */
 - (NSData *)hexStringToData:(NSString *)hexString {
     NSString *cleanHex = [hexString stringByReplacingOccurrencesOfString:@" " withString:@""];
@@ -722,18 +722,18 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
 - (void)centralManagerDidUpdateState:(CBCentralManager *)central {
     switch (central.state) {
         case CBManagerStatePoweredOn:
-            [self logMessage:@"Bluetooth powered on, starting scan"];
+            [self logMessage:@"Bluetooth eingeschaltet, starte Scan"];
             [self scanDevice];
             break;
         case CBManagerStatePoweredOff:
-            [self logMessage:@"Bluetooth powered off"];
-            [self notifyError:@"Bluetooth is powered off"];
+            [self logMessage:@"Bluetooth ausgeschaltet"];
+            [self notifyError:@"Bluetooth ist ausgeschaltet"];
             break;
         case CBManagerStateUnsupported:
-            [self notifyError:@"Bluetooth is not supported on this device"];
+            [self notifyError:@"Bluetooth wird auf diesem Gerät nicht unterstützt"];
             break;
         case CBManagerStateUnauthorized:
-            [self notifyError:@"Bluetooth permission not granted"];
+            [self notifyError:@"Bluetooth-Berechtigung nicht erteilt"];
             break;
         default:
             break;
@@ -755,20 +755,20 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
         return;
     }
     
-    // Check if device already discovered
+    // Prüfe ob Gerät bereits entdeckt wurde
     for (readerModel *model in _discoveredList) {
         if ([model.name isEqualToString:deviceName]) {
-            model.date = [NSDate date];  // Update last seen time
+            model.date = [NSDate date];  // Aktualisiere zuletzt gesehen Zeit
             return;
         }
     }
     
-    // New device discovered
+    // Neues Gerät entdeckt
     readerModel *model = [readerModel modelWithName:deviceName scanDate:[NSDate date]];
     [_discoveredList addObject:model];
     [_deviceList addObject:deviceName];
     
-    [self logMessage:[NSString stringWithFormat:@"Discovered device: %@ (RSSI: %@)", deviceName, RSSI]];
+    [self logMessage:[NSString stringWithFormat:@"Gerät entdeckt: %@ (RSSI: %@)", deviceName, RSSI]];
     
     if ([_delegate respondsToSelector:@selector(scanController:didDiscoverDevice:rssi:)]) {
         [_delegate scanController:self didDiscoverDevice:deviceName rssi:[RSSI integerValue]];
@@ -781,7 +781,7 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
                      bluetoothID:(NSString *)bluetoothID
                 andslotnameArray:(NSArray *)slotArray {
     
-    [self logMessage:[NSString stringWithFormat:@"Reader interface changed, attached: %d", attached]];
+    [self logMessage:[NSString stringWithFormat:@"Kartenleser-Schnittstelle geändert, angeschlossen: %d", attached]];
     
     if (attached) {
         [self stopScanBLEDevice];
@@ -790,77 +790,77 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
         gBluetoothID = bluetoothID;
         _slotarray = slotArray.count > 0 ? slotArray : nil;
         
-        // ✅ OPTIMIZATION: Reset battery log flag on new connection
+        // ✅ OPTIMIERUNG: Batterie-Log-Flag bei neuer Verbindung zurücksetzen
         _batteryLoggedOnce = NO;
         
-        // ✅ FIX: Only set _connectedReaderName if _selectedDeviceName is valid
+        // ✅ FIX: _connectedReaderName nur setzen wenn _selectedDeviceName gültig ist
         if (_selectedDeviceName && _selectedDeviceName.length > 0) {
             _connectedReaderName = _selectedDeviceName;
         } else {
-            // Fallback to bluetoothID if _selectedDeviceName is not set
-            // This happens when AutoPair connects automatically without explicit connectToReader call
+            // Fallback auf bluetoothID wenn _selectedDeviceName nicht gesetzt ist
+            // Dies passiert wenn AutoPair automatisch verbindet ohne expliziten connectToReader-Aufruf
             _connectedReaderName = bluetoothID;
-            [self logMessage:@"⚠️ Warning: _selectedDeviceName was nil, using bluetoothID instead"];
+            [self logMessage:@"⚠️ Warnung: _selectedDeviceName war nil, verwende stattdessen bluetoothID"];
         }
         
-        [self logMessage:@"✅ Reader connected successfully - WriteSerial command should have been sent"];
+        [self logMessage:@"✅ Kartenleser erfolgreich verbunden - WriteSerial-Befehl sollte gesendet worden sein"];
         
-        // Get reader name and battery level
+        // Rufe Kartenlesernamen und Batteriestand ab
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
             NSString *readerModelName = [self getReaderModelName];
             if (readerModelName) {
-                [self logMessage:[NSString stringWithFormat:@"Connected reader model: %@", readerModelName]];
+                [self logMessage:[NSString stringWithFormat:@"Verbundenes Kartenlesermodell: %@", readerModelName]];
                 
-                // Update _connectedReaderName with the actual model name if we got it
+                // Aktualisiere _connectedReaderName mit dem tatsächlichen Modellnamen falls vorhanden
                 dispatch_async(dispatch_get_main_queue(), ^{
                     self.connectedReaderName = readerModelName;
                 });
             }
             
-            // Wait for reader to be ready before requesting battery
+            // Warte bis Kartenleser bereit ist vor Batterieanfrage
             [NSThread sleepForTimeInterval:READER_READY_DELAY];
             [self getBatteryLevel];
         });
         
-        // Notify Flutter about connection
+        // Flutter über Verbindung benachrichtigen
         NSMutableArray<NSString *> *slotNames = [NSMutableArray array];
         for (NSString *slot in slotArray) {
             [slotNames addObject:slot];
         }
         
-        [self logMessage:[NSString stringWithFormat:@"Connected to reader: %@", _connectedReaderName]];
+        [self logMessage:[NSString stringWithFormat:@"Verbunden mit Kartenleser: %@", _connectedReaderName]];
         
-        // ✅ FIX: Only call delegate if we have a valid reader name
+        // ✅ FIX: Delegate nur aufrufen wenn gültiger Kartenlesername vorhanden ist
         if (_connectedReaderName && _connectedReaderName.length > 0) {
             if ([_delegate respondsToSelector:@selector(scanController:didConnectReader:slots:)]) {
                 [_delegate scanController:self didConnectReader:_connectedReaderName slots:slotNames];
             }
         } else {
-            [self notifyError:@"Failed to determine connected reader name"];
+            [self notifyError:@"Fehler beim Ermitteln des verbundenen Kartenlesernamens"];
         }
     } else {
-        // Handle disconnection
-        [self logMessage:@"Reader disconnected"];
-        [self logMessage:[NSString stringWithFormat:@"Disconnected Bluetooth ID: %@", gBluetoothID]];
+        // Trennung behandeln
+        [self logMessage:@"Kartenleser getrennt"];
+        [self logMessage:[NSString stringWithFormat:@"Getrennte Bluetooth-ID: %@", gBluetoothID]];
         
         [self disconnectReader];
     }
 }
 
 - (void)cardInterfaceDidDetach:(BOOL)attached slotname:(NSString *)slotname {
-    // ✅ BUGFIX: Nil check for slotname to prevent crash
-    NSString *safeSlotName = slotname ?: @"Unknown Slot";
+    // ✅ BUGFIX: Nil-Prüfung für slotname um Absturz zu verhindern
+    NSString *safeSlotName = slotname ?: @"Unbekannter Slot";
     
     if (attached) {
-        [self logMessage:[NSString stringWithFormat:@"Card inserted in slot: %@", safeSlotName]];
+        [self logMessage:[NSString stringWithFormat:@"Karte eingesteckt in Slot: %@", safeSlotName]];
         if ([_delegate respondsToSelector:@selector(scanController:didDetectCard:)]) {
             [_delegate scanController:self didDetectCard:safeSlotName];
         }
         
-        // ❌ REMOVED: Automatic EGK card read on insertion
-        // Card reading is now triggered on-demand via readEGKCardOnDemand method
+        // ❌ ENTFERNT: Automatisches EGK-Kartenauslesen beim Einstecken
+        // Kartenauslesen wird jetzt auf Anfrage über readEGKCardOnDemand-Methode ausgelöst
     } else {
-        [self logMessage:[NSString stringWithFormat:@"Card removed from slot: %@", safeSlotName]];
+        [self logMessage:[NSString stringWithFormat:@"Karte entfernt aus Slot: %@", safeSlotName]];
         if ([_delegate respondsToSelector:@selector(scanController:didRemoveCard:)]) {
             [_delegate scanController:self didRemoveCard:safeSlotName];
         }
@@ -877,20 +877,20 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
     }
     
     [_deviceList addObject:readerName];
-    [self logMessage:[NSString stringWithFormat:@"Found peripheral reader: %@", readerName]];
+    [self logMessage:[NSString stringWithFormat:@"Peripheren Kartenleser gefunden: %@", readerName]];
 }
 
 - (void)didGetBattery:(NSInteger)battery {
-    // ✅ OPTIMIZATION: Only log battery level once per connection
+    // ✅ OPTIMIERUNG: Batteriestand nur einmal pro Verbindung loggen
     if (!_batteryLoggedOnce) {
-        [self logMessage:[NSString stringWithFormat:@"Battery level: %ld%%", (long)battery]];
+        [self logMessage:[NSString stringWithFormat:@"Batteriestand: %ld%%", (long)battery]];
         _batteryLoggedOnce = YES;
     }
     
     // Batterie-Warnung bei < 10%
     [self notifyBattery:battery];
     
-    // Always notify delegate so Flutter can update UI
+    // Delegate immer benachrichtigen damit Flutter UI aktualisieren kann
     if ([_delegate respondsToSelector:@selector(scanController:didReceiveBattery:)]) {
         [_delegate scanController:self didReceiveBattery:battery];
     }
