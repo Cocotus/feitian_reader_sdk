@@ -347,7 +347,7 @@ static const NSTimeInterval SDK_DISCONNECT_DELAY = 0.3; // 300ms delay for SDK t
         // ✅ FIX: Give SDK 500ms to initialize before continuing
         [self logMessage:@"⏳ Warte 500ms für SDK-Initialisierung..."];
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(SDK_INITIALIZATION_DELAY * NSEC_PER_SEC)), 
-                      dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+                      dispatch_get_main_queue(), ^{
             [self continueReadEGKCardOnDemand];
         });
         return;
@@ -367,7 +367,7 @@ static const NSTimeInterval SDK_DISCONNECT_DELAY = 0.3; // 300ms delay for SDK t
             // ✅ FIX: Give SDK 300ms to establish context before continuing
             [self logMessage:@"⏳ Warte 300ms für Kontext-Etablierung..."];
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(CONTEXT_ESTABLISHMENT_DELAY * NSEC_PER_SEC)), 
-                          dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+                          dispatch_get_main_queue(), ^{
                 [self continueReadEGKCardOnDemand];
             });
             return;

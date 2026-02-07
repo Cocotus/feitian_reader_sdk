@@ -1029,11 +1029,12 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
     }
     
     // Strategy 4: Partial decompression with Z_SYNC_FLUSH
+    // Note: This strategy is kept for diagnostics but won't repair the stream
+    // If we reach here, the GZIP stream is too corrupted to repair automatically
     NSData *partial = [self tryPartialDecompression:data];
     if (partial && partial.length > MIN_VALID_PARTIAL_DECOMPRESSION_SIZE) {
-        [self logMessage:[NSString stringWithFormat:@"✅ Partial decompression succeeded: %lu bytes", (unsigned long)partial.length]];
-        // Return original data, not partial, so main decompressor can use it
-        return data;
+        [self logMessage:[NSString stringWithFormat:@"⚠️ Partial decompression possible (%lu bytes), but stream cannot be fully repaired", (unsigned long)partial.length]];
+        // Don't return anything - let the main decompressor try and fail with proper error
     }
     
     [self logMessage:@"❌ All repair strategies failed"];
