@@ -113,6 +113,7 @@ class _MyAppState extends State<MyApp> {
         _showSnackBar(
           '🔋 Batterie niedrig: $battery%',
           Colors.deepOrange,
+          duration: const Duration(seconds: 5),
         );
       }
     });
@@ -133,13 +134,13 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
-  void _showSnackBar(String message, Color backgroundColor) {
+  void _showSnackBar(String message, Color backgroundColor, {Duration? duration}) {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(message),
           backgroundColor: backgroundColor,
-          duration: const Duration(seconds: 3),
+          duration: duration ?? const Duration(seconds: 3),
         ),
       );
     }
@@ -157,7 +158,9 @@ class _MyAppState extends State<MyApp> {
       // Use readEGKCardOnDemand for complete workflow
       await _feitianReaderPlugin.readEGKCardOnDemand();
     } catch (e) {
-      _logs.insert(0, '❌ EGK-Lesevorgang fehlgeschlagen: $e');
+      setState(() {
+        _logs.insert(0, '❌ EGK-Lesevorgang fehlgeschlagen: $e');
+      });
       _showSnackBar('❌ Fehler: $e', Colors.red);
     }
   }
