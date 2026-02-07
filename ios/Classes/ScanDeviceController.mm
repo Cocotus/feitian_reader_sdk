@@ -257,84 +257,57 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
 
 
 - (void)readEGKCard {
-    [self logMessage:@"Reading EGK card data"];
+    [self logMessage:@"🔷 Starte EGK-Kartenauslesung mit GEMATIK-Spezifikation"];
     
-    // Step 1: Connect to card (power on)
+    // Schritt 1: Kartenverbindung herstellen (power on)
     DWORD dwActiveProtocol = -1;
     NSString *reader = [self getReaderList];
     
     if (!reader) {
-        [self notifyError:@"No reader available for EGK card reading"];
+        [self notifyError:@"❌ Kein Kartenleser verfügbar"];
         return;
     }
     
-    [self logMessage:@"Connecting to EGK card..."];
+    [self logMessage:@"📡 Verbinde mit EGK-Karte..."];
     LONG ret = SCardConnect(gContxtHandle, [reader UTF8String], SCARD_SHARE_SHARED,
                            SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1, &gCardHandle, &dwActiveProtocol);
     
     if (ret != SCARD_S_SUCCESS) {
-        [self notifyError:[NSString stringWithFormat:@"Failed to connect to EGK card: 0x%08lx", ret]];
+        [self notifyError:[NSString stringWithFormat:@"❌ Fehler bei Kartenverbindung: 0x%08lx", ret]];
         return;
     }
     
-    [self logMessage:@"EGK card connected successfully"];
+    [self logMessage:@"✅ EGK-Karte erfolgreich verbunden"];
     
-    // Step 2: Get ATR (Answer To Reset)
-    unsigned char patr[33] = {0};
-    DWORD atrLen = sizeof(patr);
-    ret = SCardGetAttrib(gCardHandle, 0, patr, &atrLen);
-    if (ret != SCARD_S_SUCCESS) {
-        [self logMessage:[NSString stringWithFormat:@"SCardGetAttrib warning: 0x%08lx", ret]];
+    // Schritt 2: EGKCardReader erstellen und Auslesevorgang starten
+    EGKCardReader *cardReader = [[EGKCardReader alloc] initWithCardHandle:gCardHandle context:gContxtHandle];
+    cardReader.delegate = self;
+    
+    EGKCardData *cardData = [cardReader readEGKCard];
+    
+    // Schritt 3: Ergebnisse verarbeiten
+    if (cardData) {
+        [self logMessage:@"✅ EGK-Kartendaten erfolgreich ausgelesen"];
+        
+        // Konvertiere zu Dictionary und sende an Flutter
+        NSDictionary *egkDict = [cardData toDictionary];
+        if ([_delegate respondsToSelector:@selector(scanController:didReadEGKData:)]) {
+            [_delegate scanController:self didReadEGKData:egkDict];
+        }
+    } else {
+        [self logMessage:@"❌ Fehler beim Auslesen der EGK-Kartendaten"];
     }
     
-    // Convert ATR to hex string
-    NSMutableString *atrHex = [NSMutableString string];
-    for (DWORD i = 0; i < atrLen; i++) {
-        [atrHex appendFormat:@"%02X", patr[i]];
-    }
-    [self logMessage:[NSString stringWithFormat:@"Card ATR: %@", atrHex]];
-    
-    // Step 3: Send EGK-specific APDU commands
-    // TODO: Replace these placeholder commands with actual EGK APDU commands
-    // Based on eGK specifications from gematik
-    
-    NSMutableDictionary *egkData = [NSMutableDictionary dictionary];
-    egkData[@"atr"] = atrHex;
-    egkData[@"cardType"] = @"EGK";
-    egkData[@"readSuccess"] = @YES;
-    
-    // Placeholder APDU 1: Select EGK Root Application
-    // Real command would be: SELECT FILE (AID for eGK root application)
-    // Example: 00 A4 04 0C 07 D2 76 00 01 44 80 00
-    [self logMessage:@"Sending APDU commands to read EGK data..."];
-    [self logMessage:@"TODO: Implement actual EGK APDU commands"];
-    [self logMessage:@"TODO: Command 1 - Select eGK Root Application"];
-    [self logMessage:@"TODO: Command 2 - Select and read personal data (PD)"];
-    [self logMessage:@"TODO: Command 3 - Select and read insurance data (VD)"];
-    
-    // Placeholder data - in real implementation, this would come from APDU responses
-    egkData[@"placeholder"] = @"Replace with actual EGK data from APDU responses";
-    egkData[@"patientName"] = @"[To be read from card]";
-    egkData[@"insuranceNumber"] = @"[To be read from card]";
-    egkData[@"insuranceCompany"] = @"[To be read from card]";
-    
-    [self logMessage:@"EGK card reading completed"];
-    
-    // Step 4: Notify Flutter with the data
-    if ([_delegate respondsToSelector:@selector(scanController:didReadEGKData:)]) {
-        [_delegate scanController:self didReadEGKData:egkData];
-    }
-    
-    // Step 5: Auto-disconnect card
-    [self logMessage:@"Disconnecting from card..."];
+    // Schritt 4: Auto-Disconnect von Karte
+    [self logMessage:@"🔌 Trenne Karte..."];
     if (gCardHandle != 0) {
         SCardDisconnect(gCardHandle, SCARD_LEAVE_CARD);
         gCardHandle = 0;
-        [self logMessage:@"Card disconnected"];
+        [self logMessage:@"✅ Karte getrennt"];
     }
     
-    // Step 6: Auto-disconnect reader
-    [self logMessage:@"Disconnecting from reader..."];
+    // Schritt 5: Auto-Disconnect von Kartenleser
+    [self logMessage:@"🔌 Trenne Kartenleser..."];
     [self disconnectReader];
 }
 
@@ -900,6 +873,23 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
     if ([_delegate respondsToSelector:@selector(scanController:didReceiveBattery:)]) {
         [_delegate scanController:self didReceiveBattery:battery];
     }
+}
+
+#pragma mark - EGKCardReaderDelegate
+
+- (void)cardReader:(id)reader didLogMessage:(NSString *)message {
+    // Weiterleiten an eigenes Logging-System
+    [self logMessage:message];
+}
+
+- (void)cardReader:(id)reader didReceiveError:(NSString *)error {
+    // Weiterleiten an Fehlerbehandlung
+    [self notifyError:error];
+}
+
+- (void)cardReader:(id)reader didReadCardData:(EGKCardData *)cardData {
+    // Wird bereits in readEGKCard behandelt
+    [self logMessage:@"EGKCardReader hat Daten gelesen"];
 }
 
 @end
