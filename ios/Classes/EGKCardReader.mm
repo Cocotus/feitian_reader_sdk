@@ -350,10 +350,29 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
         return nil;
     }
     
+    // Try UTF-8 first
     NSString *xmlString = [[NSString alloc] initWithData:decompressedData encoding:NSUTF8StringEncoding];
+    
+    // Fallback to ISO-8859-1 (Latin-1) if UTF-8 fails
     if (!xmlString) {
-        [self logError:@"❌ Fehler beim Parsen der PD-Daten als UTF-8"];
+        [self logMessage:@"⚠️ UTF-8 decoding failed, trying ISO-8859-1"];
+        xmlString = [[NSString alloc] initWithData:decompressedData encoding:NSISOLatin1StringEncoding];
+    }
+    
+    // Fallback to Windows-1252 if both fail
+    if (!xmlString) {
+        [self logMessage:@"⚠️ ISO-8859-1 decoding failed, trying Windows-1252"];
+        xmlString = [[NSString alloc] initWithData:decompressedData encoding:NSWindowsCP1252StringEncoding];
+    }
+    
+    if (!xmlString) {
+        [self logError:@"❌ Fehler beim Parsen der PD-Daten (alle Encodings fehlgeschlagen)"];
         return nil;
+    }
+    
+    // Remove BOM if present
+    if ([xmlString hasPrefix:@"\uFEFF"]) {
+        xmlString = [xmlString substringFromIndex:1];
     }
     
     [self logMessage:[NSString stringWithFormat:@"✅ PD-XML erfolgreich dekomprimiert (%lu Bytes)", (unsigned long)decompressedData.length]];
@@ -373,15 +392,27 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
     }
     [self logMessage:[NSString stringWithFormat:@"📥 Response: %@", [self dataToHexString:lengthResponse]]];
     
-    // Parse Länge aus Response (Bytes 6-7, Big Endian)
-    if (lengthResponse.length < 10) { // 8 Bytes Header + 2 Bytes SW
+    // Parse pointer structure correctly (8 bytes + 2 status bytes)
+    if (lengthResponse.length < 10) {
         [self logError:@"❌ VD-Länge Response zu kurz"];
         return nil;
     }
     
     const uint8_t *bytes = (const uint8_t *)lengthResponse.bytes;
-    uint16_t vdLength = (bytes[6] << 8) | bytes[7];
-    [self logMessage:[NSString stringWithFormat:@"📊 VD-Datenlänge: %u Bytes", vdLength]];
+    
+    // Parse all 4 offsets from the pointer structure
+    uint16_t vdStart = (bytes[0] << 8) | bytes[1];    // VD container start
+    uint16_t vdEnd = (bytes[2] << 8) | bytes[3];      // VD container end
+    uint16_t gdvStart = (bytes[4] << 8) | bytes[5];   // GDV container start (optional)
+    uint16_t gdvEnd = (bytes[6] << 8) | bytes[7];     // GDV container end (optional)
+    
+    // Calculate actual VD length
+    uint16_t vdLength = vdEnd - vdStart;
+    
+    [self logMessage:[NSString stringWithFormat:@"📊 VD-Container: Start=%u, End=%u, Length=%u", 
+                     vdStart, vdEnd, vdLength]];
+    [self logMessage:[NSString stringWithFormat:@"📊 GDV-Container: Start=%u, End=%u", 
+                     gdvStart, gdvEnd]];
     
     if (vdLength == 0 || vdLength > MAX_VD_DATA_LENGTH) {
         [self logError:[NSString stringWithFormat:@"❌ Ungültige VD-Länge: %u", vdLength]];
@@ -390,16 +421,19 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
     
     // Schritt 9.2: VD-Daten in mehreren Chunks auslesen (Le=0x00 bedeutet max. 256 Bytes)
     NSMutableData *fullData = [NSMutableData data];
-    uint16_t offset = 0x0008; // Nach den 8 Header-Bytes
+    uint16_t offset = vdStart; // Read VD data starting from vdStart position
     
     while (fullData.length < vdLength) {
+        uint16_t remainingBytes = vdLength - (uint16_t)fullData.length;
+        uint16_t chunkSize = MIN(256, remainingBytes);
+        
         uint8_t p1 = (offset >> 8) & 0xFF;
         uint8_t p2 = offset & 0xFF;
+        uint8_t le = (uint8_t)chunkSize;
         
-        // Le=0x00 bedeutet "maximal 256 Bytes lesen"
-        uint8_t readVDCmd[] = {0x00, 0xB0, p1, p2, 0x00};
+        uint8_t readVDCmd[] = {0x00, 0xB0, p1, p2, le};
         
-        [self logMessage:[NSString stringWithFormat:@"📤 APDU: Read VD Chunk (00 B0 %02X %02X 00)", p1, p2]];
+        [self logMessage:[NSString stringWithFormat:@"📤 APDU: Read VD Chunk (00 B0 %02X %02X %02X)", p1, p2, le]];
         NSData *chunkResponse = [self sendeAPDU:readVDCmd length:sizeof(readVDCmd)];
         if (!chunkResponse || ![self pruefeStatuswort:chunkResponse]) {
             return nil;
@@ -425,10 +459,29 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
         return nil;
     }
     
+    // Try UTF-8 first
     NSString *xmlString = [[NSString alloc] initWithData:decompressedData encoding:NSUTF8StringEncoding];
+    
+    // Fallback to ISO-8859-1 (Latin-1) if UTF-8 fails
     if (!xmlString) {
-        [self logError:@"❌ Fehler beim Parsen der VD-Daten als UTF-8"];
+        [self logMessage:@"⚠️ UTF-8 decoding failed, trying ISO-8859-1"];
+        xmlString = [[NSString alloc] initWithData:decompressedData encoding:NSISOLatin1StringEncoding];
+    }
+    
+    // Fallback to Windows-1252 if both fail
+    if (!xmlString) {
+        [self logMessage:@"⚠️ ISO-8859-1 decoding failed, trying Windows-1252"];
+        xmlString = [[NSString alloc] initWithData:decompressedData encoding:NSWindowsCP1252StringEncoding];
+    }
+    
+    if (!xmlString) {
+        [self logError:@"❌ Fehler beim Parsen der VD-Daten (alle Encodings fehlgeschlagen)"];
         return nil;
+    }
+    
+    // Remove BOM if present
+    if ([xmlString hasPrefix:@"\uFEFF"]) {
+        xmlString = [xmlString substringFromIndex:1];
     }
     
     [self logMessage:[NSString stringWithFormat:@"✅ VD-XML erfolgreich dekomprimiert (%lu Bytes)", (unsigned long)decompressedData.length]];
