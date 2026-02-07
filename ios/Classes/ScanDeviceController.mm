@@ -314,6 +314,27 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
 - (void)readEGKCardOnDemand {
     [self logMessage:@"Starting on-demand EGK card reading workflow"];
     
+    // ✅ FIX: Ensure SDK is initialized before reading
+    // This mirrors the old demo implementation's viewWillAppear logic
+    if (!_isReaderInterfaceInitialized) {
+        [self logMessage:@"Reader interface not initialized, initializing now..."];
+        [self initReaderInterface];
+        _isReaderInterfaceInitialized = YES;
+    }
+    
+    // ✅ FIX: Ensure card context is established
+    if (gContxtHandle == 0) {
+        [self logMessage:@"Card context not established, establishing now..."];
+        ULONG ret = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &gContxtHandle);
+        if (ret != 0) {
+            [self notifyError:[NSString stringWithFormat:@"Failed to establish card context: 0x%08lx", ret]];
+            return;
+        } else {
+            FtSetTimeout(gContxtHandle, 50000);
+            [self logMessage:@"Card context established successfully"];
+        }
+    }
+    
     // Step 1: Check if reader is connected
     if (!_connectedReaderName || _connectedReaderName.length == 0) {
         [self logMessage:@"No reader connected"];
