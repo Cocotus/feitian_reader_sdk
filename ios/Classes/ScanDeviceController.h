@@ -55,6 +55,12 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)readEGKCardOnDemand;
 
 /**
+ * Internal method for continuing EGK card reading after SDK initialization delays
+ * This is called after giving SDK time to initialize in readEGKCardOnDemand
+ */
+- (void)continueReadEGKCardOnDemand;
+
+/**
  * Get the connected reader's model name (e.g., "bR301", "iR301")
  */
 - (NSString *)getReaderModelName;

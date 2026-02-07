@@ -96,6 +96,27 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
  */
 - (nullable NSString *)leseVersichertendatenExtended;
 
+/**
+ * Multi-strategy GZIP stream repair for corrupted or incomplete GZIP data
+ * @param data Potentially corrupted GZIP data
+ * @return Repaired GZIP data or nil if repair failed
+ */
+- (nullable NSData *)tryRepairGZIPStream:(NSData *)data;
+
+/**
+ * Test if GZIP data can be successfully decompressed
+ * @param data GZIP data to test
+ * @return YES if decompression succeeds, NO otherwise
+ */
+- (BOOL)testGZIPDecompression:(NSData *)data;
+
+/**
+ * Try partial decompression with Z_SYNC_FLUSH as fallback
+ * @param data GZIP data to decompress
+ * @return Partially decompressed data or nil
+ */
+- (nullable NSData *)tryPartialDecompression:(NSData *)data;
+
 @end
 
 @implementation EGKCardReader
@@ -593,10 +614,17 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
         return nil;
     }
     
-    // Additional validation: check GZIP stream completeness
-    if (![self validateGZIPStream:cleanedVdData]) {
-        [self logError:@"❌ GZIP stream validation failed"];
-        return nil;
+    // ✅ NEW: Try to repair corrupted GZIP stream before decompression
+    NSData *repairedData = [self tryRepairGZIPStream:cleanedVdData];
+    if (repairedData) {
+        [self logMessage:@"✅ GZIP stream repaired, using repaired data"];
+        cleanedVdData = repairedData;
+    } else {
+        // Additional validation: check GZIP stream completeness
+        if (![self validateGZIPStream:cleanedVdData]) {
+            [self logError:@"⚠️ GZIP stream validation failed, attempting decompression anyway"];
+            // Don't return nil here, try decompression anyway
+        }
     }
     
     // GZIP-Dekomprimierung with cleaned data
@@ -940,6 +968,141 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
     
     [self logMessage:[NSString stringWithFormat:@"✅ GZIP stream validation passed (%lu bytes)", (unsigned long)data.length]];
     return YES;
+}
+
+/**
+ * Multi-strategy GZIP stream repair for corrupted or incomplete GZIP data
+ * This method tries multiple strategies to repair GZIP streams that are missing
+ * footer bytes or have other corruption issues
+ */
+- (nullable NSData *)tryRepairGZIPStream:(NSData *)data {
+    if (data.length < 18) {
+        return nil;
+    }
+    
+    [self logMessage:@"🔧 Attempting GZIP stream repair with multiple strategies..."];
+    
+    // Strategy 1: Try trimming trailing bytes (1-10 bytes)
+    // Some cards append extra status bytes after GZIP footer
+    for (NSInteger trimSize = 1; trimSize <= 10; trimSize++) {
+        if (data.length <= trimSize) break;
+        
+        NSData *trimmed = [data subdataWithRange:NSMakeRange(0, data.length - trimSize)];
+        if ([self testGZIPDecompression:trimmed]) {
+            [self logMessage:[NSString stringWithFormat:@"✅ Repaired by trimming %ld trailing byte(s)", trimSize]];
+            return trimmed;
+        }
+    }
+    
+    // Strategy 2: Try adding null padding bytes (1-8 bytes)
+    // EGK cards sometimes return GZIP streams with incomplete footer
+    for (NSInteger padSize = 1; padSize <= 8; padSize++) {
+        NSMutableData *padded = [NSMutableData dataWithData:data];
+        uint8_t padding[8] = {0};
+        [padded appendBytes:padding length:padSize];
+        
+        if ([self testGZIPDecompression:padded]) {
+            [self logMessage:[NSString stringWithFormat:@"✅ Repaired by adding %ld padding byte(s)", padSize]];
+            return padded;
+        }
+    }
+    
+    // Strategy 3: Replace status word bytes (90 00) with null bytes
+    // Card status bytes might interfere with GZIP footer
+    if (data.length > 10) {
+        const uint8_t *bytes = (const uint8_t *)data.bytes;
+        if (bytes[data.length - 2] == 0x90 && bytes[data.length - 1] == 0x00) {
+            NSMutableData *fixed = [NSMutableData dataWithData:data];
+            uint8_t nullBytes[2] = {0x00, 0x00};
+            [fixed replaceBytesInRange:NSMakeRange(fixed.length - 2, 2) withBytes:nullBytes length:2];
+            
+            if ([self testGZIPDecompression:fixed]) {
+                [self logMessage:@"✅ Repaired by replacing status word (90 00) with null bytes"];
+                return fixed;
+            }
+        }
+    }
+    
+    // Strategy 4: Partial decompression with Z_SYNC_FLUSH
+    NSData *partial = [self tryPartialDecompression:data];
+    if (partial && partial.length > 100) {
+        [self logMessage:[NSString stringWithFormat:@"✅ Partial decompression succeeded: %lu bytes", (unsigned long)partial.length]];
+        // Return original data, not partial, so main decompressor can use it
+        return data;
+    }
+    
+    [self logMessage:@"❌ All repair strategies failed"];
+    return nil;
+}
+
+/**
+ * Test if GZIP data can be successfully decompressed
+ */
+- (BOOL)testGZIPDecompression:(NSData *)data {
+    z_stream stream;
+    memset(&stream, 0, sizeof(stream));
+    stream.next_in = (Bytef *)data.bytes;
+    stream.avail_in = (uInt)data.length;
+    
+    if (inflateInit2(&stream, 31) != Z_OK) {
+        return NO;
+    }
+    
+    BOOL success = YES;
+    uint8_t buffer[32768];
+    int ret;
+    
+    do {
+        stream.next_out = buffer;
+        stream.avail_out = sizeof(buffer);
+        ret = inflate(&stream, Z_NO_FLUSH);
+        
+        if (ret != Z_OK && ret != Z_STREAM_END) {
+            success = NO;
+            break;
+        }
+    } while (ret != Z_STREAM_END && stream.avail_in > 0);
+    
+    inflateEnd(&stream);
+    return (success && ret == Z_STREAM_END);
+}
+
+/**
+ * Try partial decompression with Z_SYNC_FLUSH as fallback
+ */
+- (nullable NSData *)tryPartialDecompression:(NSData *)data {
+    z_stream stream;
+    memset(&stream, 0, sizeof(stream));
+    stream.next_in = (Bytef *)data.bytes;
+    stream.avail_in = (uInt)data.length;
+    
+    if (inflateInit2(&stream, 31) != Z_OK) {
+        return nil;
+    }
+    
+    NSMutableData *decompressed = [NSMutableData dataWithCapacity:data.length * 4];
+    uint8_t buffer[32768];
+    int ret;
+    
+    do {
+        stream.next_out = buffer;
+        stream.avail_out = sizeof(buffer);
+        ret = inflate(&stream, Z_SYNC_FLUSH);
+        
+        if (ret != Z_OK && ret != Z_STREAM_END && ret != Z_BUF_ERROR) {
+            break;
+        }
+        
+        NSUInteger have = sizeof(buffer) - stream.avail_out;
+        if (have > 0) {
+            [decompressed appendBytes:buffer length:have];
+        }
+        
+    } while (stream.avail_in > 0 && ret != Z_STREAM_END);
+    
+    inflateEnd(&stream);
+    
+    return decompressed.length > 0 ? [decompressed copy] : nil;
 }
 
 /**

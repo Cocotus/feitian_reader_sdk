@@ -158,52 +158,49 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Verzögerung vor Batter
 }
 
 - (void)disconnectReader {
-    if (_connectedReaderName) {
-        [self logMessage:[NSString stringWithFormat:@"Trenne Verbindung zu Kartenleser: %@", _connectedReaderName]];
-        
-        // Karte trennen falls verbunden
-        if (gCardHandle != 0) {
-            [self logMessage:@"Trenne Karte..."];
-            SCardDisconnect(gCardHandle, SCARD_LEAVE_CARD);
-            gCardHandle = 0;
-        }
-        
-        // Bluetooth-Kartenleser trennen
-        if (_interface && gBluetoothID.length > 0) {
-            [self logMessage:[NSString stringWithFormat:@"Trenne Bluetooth-Kartenleser: %@", gBluetoothID]];
-            [_interface disConnectCurrentPeripheralReader];
-        }
-        
-        // Status zurücksetzen
-        _connectedReaderName = nil;
-        gBluetoothID = @"";
-        _slotarray = nil;
-        _batteryLoggedOnce = NO;
-        
-        // Flutter benachrichtigen
-        if ([_delegate respondsToSelector:@selector(scanControllerDidDisconnectReader:)]) {
-            [_delegate scanControllerDidDisconnectReader:self];
-        }
-        
-        [self logMessage:@"Kartenleser erfolgreich getrennt"];
-    } else {
-        [self logMessage:@"Kein Kartenleser zum Trennen verbunden"];
+    [self logMessage:@"Starte Trennvorgang..."];
+    
+    // Step 1: Disconnect card if connected
+    if (gCardHandle != 0) {
+        [self logMessage:@"Trenne Karte..."];
+        SCardDisconnect(gCardHandle, SCARD_LEAVE_CARD);
+        gCardHandle = 0;
     }
     
-    // ✅ FIX: Complete cleanup of ReaderInterface to prevent duplicate callbacks
-    // This ensures a clean state for next connection and stops all delegate events
-    if (_interface) {
-        [self logMessage:@"Bereinige ReaderInterface..."];
-        [_interface setDelegate:nil];  // Stop receiving delegate callbacks
-        _interface = nil;               // Release interface object
-        [self logMessage:@"ReaderInterface bereinigt"];
+    // Step 2: Disconnect Bluetooth reader
+    if (_interface && gBluetoothID.length > 0) {
+        [self logMessage:[NSString stringWithFormat:@"Trenne Bluetooth-Kartenleser: %@", gBluetoothID]];
+        [_interface disConnectCurrentPeripheralReader];
     }
     
-    // ✅ FIX: Reset initialization flag so next scan creates fresh interface
-    _isReaderInterfaceInitialized = NO;
-    
-    // ✅ FIX: Stop any active BLE scanning
+    // Step 3: Stop BLE scanning BEFORE cleanup to prevent new events
     [self stopScanBLEDevice];
+    
+    // Step 4: Wait for SDK to finish disconnect operations (300ms delay)
+    // This prevents race conditions where SDK events arrive after delegate is set to nil
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        // Step 5: Clean up ReaderInterface to stop all delegate callbacks
+        if (self->_interface) {
+            [self logMessage:@"Bereinige ReaderInterface..."];
+            [self->_interface setDelegate:nil];
+            self->_interface = nil;
+            [self logMessage:@"ReaderInterface bereinigt"];
+        }
+        
+        // Step 6: Reset all state flags
+        self->_isReaderInterfaceInitialized = NO;
+        self->_connectedReaderName = nil;
+        gBluetoothID = @"";
+        self->_slotarray = nil;
+        self->_batteryLoggedOnce = NO;
+        
+        // Step 7: Notify Flutter about disconnection
+        if ([self.delegate respondsToSelector:@selector(scanControllerDidDisconnectReader:)]) {
+            [self.delegate scanControllerDidDisconnectReader:self];
+        }
+        
+        [self logMessage:@"✅ Kartenleser erfolgreich getrennt - SDK bereinigt"];
+    });
 }
 
 - (void)getBatteryLevel {
@@ -329,15 +326,22 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Verzögerung vor Batter
 - (void)readEGKCardOnDemand {
     [self logMessage:@"Starte On-Demand EGK-Kartenauslesung"];
     
-    // ✅ FIX: Sicherstellen, dass SDK vor dem Auslesen initialisiert ist
-    // Dies entspricht der viewWillAppear-Logik der alten Demo-Implementierung
+    // Step 1: Initialize SDK if needed
     if (!_isReaderInterfaceInitialized) {
         [self logMessage:@"Kartenleser-Schnittstelle nicht initialisiert, initialisiere jetzt..."];
         [self initReaderInterface];
         _isReaderInterfaceInitialized = YES;
+        
+        // ✅ FIX: Give SDK 500ms to initialize before continuing
+        [self logMessage:@"⏳ Warte 500ms für SDK-Initialisierung..."];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), 
+                      dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            [self continueReadEGKCardOnDemand];
+        });
+        return;
     }
     
-    // ✅ FIX: Sicherstellen, dass Kartenkontext hergestellt ist
+    // Step 2: Establish context if needed
     if (gContxtHandle == 0) {
         [self logMessage:@"Kartenkontext nicht hergestellt, stelle jetzt her..."];
         ULONG ret = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &gContxtHandle);
@@ -347,17 +351,32 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Verzögerung vor Batter
         } else {
             FtSetTimeout(gContxtHandle, 50000);
             [self logMessage:@"Kartenkontext erfolgreich hergestellt"];
+            
+            // ✅ FIX: Give SDK 300ms to establish context before continuing
+            [self logMessage:@"⏳ Warte 300ms für Kontext-Etablierung..."];
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), 
+                          dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+                [self continueReadEGKCardOnDemand];
+            });
+            return;
         }
     }
     
-    // Schritt 1: Prüfen ob Kartenleser verbunden ist
+    // Continue with card reading
+    [self continueReadEGKCardOnDemand];
+}
+
+- (void)continueReadEGKCardOnDemand {
+    [self logMessage:@"Fahre mit EGK-Kartenauslesung fort..."];
+    
+    // Check if reader is connected
     if (!_connectedReaderName || _connectedReaderName.length == 0) {
         [self logMessage:@"Kein Kartenleser verbunden"];
         [self notifyNoBluetooth];
         return;
     }
     
-    // Schritt 2: Kartenleser ist verbunden, prüfe ob Karte eingesteckt ist
+    // Get reader name
     NSString *reader = [self getReaderList];
     if (!reader) {
         [self logMessage:@"Kein Kartenleser für Kartenverbindung verfügbar"];
@@ -365,21 +384,27 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Verzögerung vor Batter
         return;
     }
     
-    // Schritt 3: Versuche Verbindung zur Karte herzustellen (schlägt fehl wenn keine Karte eingesteckt ist)
+    // Try to connect to card (fails if no card is inserted)
     DWORD dwActiveProtocol = -1;
     [self logMessage:@"Prüfe auf Karte..."];
     LONG ret = SCardConnect(gContxtHandle, [reader UTF8String], SCARD_SHARE_SHARED,
                            SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1, &gCardHandle, &dwActiveProtocol);
     
     if (ret != SCARD_S_SUCCESS) {
-        [self logMessage:[NSString stringWithFormat:@"Keine Karte gefunden: 0x%08lx", ret]];
-        [self notifyNoDataMobileMode];
+        // Differentiate between "no card" and other errors
+        if (ret == SCARD_W_REMOVED_CARD || ret == SCARD_E_NO_SMARTCARD) {
+            [self logMessage:[NSString stringWithFormat:@"Keine Karte gefunden: 0x%08lx", ret]];
+            [self notifyNoDataMobileMode];  // No card inserted
+        } else {
+            [self logMessage:[NSString stringWithFormat:@"Kartenfehler: 0x%08lx", ret]];
+            [self notifyError:[NSString stringWithFormat:@"Kartenverbindungsfehler: 0x%08lx", ret]];
+        }
         return;
     }
     
-    [self logMessage:@"Karte gefunden und verbunden"];
+    [self logMessage:@"✅ Karte gefunden und verbunden"];
     
-    // Schritt 4: EGK-Karte mit vorhandener Logik auslesen
+    // Start EGK card reading
     [self readEGKCard];
 }
 
@@ -796,6 +821,12 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Verzögerung vor Batter
                      bluetoothID:(NSString *)bluetoothID
                 andslotnameArray:(NSArray *)slotArray {
     
+    // ✅ GUARD: Check if still connected before processing to prevent stale events
+    if (!_interface || !_isReaderInterfaceInitialized) {
+        [self logMessage:@"⚠️ Ignoriere ReaderInterface-Event: Interface wurde bereits bereinigt"];
+        return;
+    }
+    
     [self logMessage:[NSString stringWithFormat:@"Kartenleser-Schnittstelle geändert, angeschlossen: %d", attached]];
     
     if (attached) {
@@ -863,6 +894,12 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Verzögerung vor Batter
 }
 
 - (void)cardInterfaceDidDetach:(BOOL)attached slotname:(NSString *)slotname {
+    // ✅ GUARD: Check if still connected before processing to prevent stale events
+    if (!_interface || !_isReaderInterfaceInitialized) {
+        [self logMessage:@"⚠️ Ignoriere CardInterface-Event: Interface wurde bereits bereinigt"];
+        return;
+    }
+    
     // ✅ BUGFIX: Nil-Prüfung für slotname um Absturz zu verhindern
     NSString *safeSlotName = slotname ?: @"Unbekannter Slot";
     
@@ -883,6 +920,11 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Verzögerung vor Batter
 }
 
 - (void)findPeripheralReader:(NSString *)readerName {
+    // ✅ GUARD: Check if still connected before processing to prevent stale events
+    if (!_interface || !_isReaderInterfaceInitialized) {
+        return;
+    }
+    
     if (!readerName) {
         return;
     }
@@ -896,6 +938,11 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Verzögerung vor Batter
 }
 
 - (void)didGetBattery:(NSInteger)battery {
+    // ✅ GUARD: Check if still connected before processing to prevent stale events
+    if (!_interface || !_isReaderInterfaceInitialized) {
+        return;
+    }
+    
     // ✅ OPTIMIERUNG: Batteriestand nur einmal pro Verbindung loggen
     if (!_batteryLoggedOnce) {
         [self logMessage:[NSString stringWithFormat:@"Batteriestand: %ld%%", (long)battery]];
