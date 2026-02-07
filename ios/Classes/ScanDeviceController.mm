@@ -23,6 +23,11 @@ static const NSUInteger MAX_APDU_RESPONSE_SIZE = 2048 + 128;
 static const NSTimeInterval APDU_COMMAND_DELAY = 0.05; // Verzögerung zwischen aufeinanderfolgenden Befehlen
 static const NSTimeInterval READER_READY_DELAY = 0.5; // Verzögerung vor Batterieabfrage nach Verbindung
 
+// Konstanten für SDK-Initialisierung und Disconnect-Timing
+static const NSTimeInterval SDK_INITIALIZATION_DELAY = 0.5; // 500ms delay for SDK to initialize
+static const NSTimeInterval CONTEXT_ESTABLISHMENT_DELAY = 0.3; // 300ms delay for context to establish
+static const NSTimeInterval SDK_DISCONNECT_DELAY = 0.3; // 300ms delay for SDK to complete disconnect operations
+
 @interface ScanDeviceController () <ReaderInterfaceDelegate, CBCentralManagerDelegate>
 @property (nonatomic, strong) CBCentralManager *central;
 @property (nonatomic, strong) NSArray *slotarray;
@@ -34,6 +39,13 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Verzögerung vor Batter
 @property (nonatomic, assign) BOOL isScanning;
 @property (nonatomic, assign) BOOL isReaderInterfaceInitialized;
 @property (nonatomic, strong) NSTimer *refreshTimer;
+
+/**
+ * Internal method for continuing EGK card reading after SDK initialization delays
+ * This is called after giving SDK time to initialize in readEGKCardOnDemand
+ */
+- (void)continueReadEGKCardOnDemand;
+
 @end
 
 @implementation ScanDeviceController
@@ -178,7 +190,7 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Verzögerung vor Batter
     
     // Step 4: Wait for SDK to finish disconnect operations (300ms delay)
     // This prevents race conditions where SDK events arrive after delegate is set to nil
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(SDK_DISCONNECT_DELAY * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         // Step 5: Clean up ReaderInterface to stop all delegate callbacks
         if (self->_interface) {
             [self logMessage:@"Bereinige ReaderInterface..."];
@@ -334,7 +346,7 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Verzögerung vor Batter
         
         // ✅ FIX: Give SDK 500ms to initialize before continuing
         [self logMessage:@"⏳ Warte 500ms für SDK-Initialisierung..."];
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), 
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(SDK_INITIALIZATION_DELAY * NSEC_PER_SEC)), 
                       dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
             [self continueReadEGKCardOnDemand];
         });
@@ -354,7 +366,7 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Verzögerung vor Batter
             
             // ✅ FIX: Give SDK 300ms to establish context before continuing
             [self logMessage:@"⏳ Warte 300ms für Kontext-Etablierung..."];
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), 
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(CONTEXT_ESTABLISHMENT_DELAY * NSEC_PER_SEC)), 
                           dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
                 [self continueReadEGKCardOnDemand];
             });

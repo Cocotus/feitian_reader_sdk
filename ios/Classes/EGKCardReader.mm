@@ -28,6 +28,11 @@ static const uint8_t APDU_EJECT_ICC[] = {0x20, 0x15, 0x01, 0x00, 0x01, 0x05};   
 // Erfolgsstatus
 static const uint16_t SW_SUCCESS = 0x9000;
 
+// Konstanten für GZIP-Stream-Reparatur
+static const NSInteger MAX_GZIP_TRAILING_BYTES_TO_TRIM = 10; // Max bytes to trim from end for repair
+static const NSInteger MAX_GZIP_PADDING_BYTES = 8;           // Max padding bytes to add for incomplete footer
+static const NSInteger MIN_VALID_PARTIAL_DECOMPRESSION_SIZE = 100; // Min bytes for valid partial decompression
+
 // Maximale Datenlängen nach GEMATIK-Spezifikation
 static const uint16_t MAX_PD_DATA_LENGTH = 10000;  // Maximale Länge für Patientendaten
 static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versichertendaten
@@ -984,7 +989,7 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
     
     // Strategy 1: Try trimming trailing bytes (1-10 bytes)
     // Some cards append extra status bytes after GZIP footer
-    for (NSInteger trimSize = 1; trimSize <= 10; trimSize++) {
+    for (NSInteger trimSize = 1; trimSize <= MAX_GZIP_TRAILING_BYTES_TO_TRIM; trimSize++) {
         if (data.length <= trimSize) break;
         
         NSData *trimmed = [data subdataWithRange:NSMakeRange(0, data.length - trimSize)];
@@ -996,9 +1001,9 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
     
     // Strategy 2: Try adding null padding bytes (1-8 bytes)
     // EGK cards sometimes return GZIP streams with incomplete footer
-    for (NSInteger padSize = 1; padSize <= 8; padSize++) {
+    for (NSInteger padSize = 1; padSize <= MAX_GZIP_PADDING_BYTES; padSize++) {
         NSMutableData *padded = [NSMutableData dataWithData:data];
-        uint8_t padding[8] = {0};
+        uint8_t padding[MAX_GZIP_PADDING_BYTES] = {0};
         [padded appendBytes:padding length:padSize];
         
         if ([self testGZIPDecompression:padded]) {
@@ -1025,7 +1030,7 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
     
     // Strategy 4: Partial decompression with Z_SYNC_FLUSH
     NSData *partial = [self tryPartialDecompression:data];
-    if (partial && partial.length > 100) {
+    if (partial && partial.length > MIN_VALID_PARTIAL_DECOMPRESSION_SIZE) {
         [self logMessage:[NSString stringWithFormat:@"✅ Partial decompression succeeded: %lu bytes", (unsigned long)partial.length]];
         // Return original data, not partial, so main decompressor can use it
         return data;
