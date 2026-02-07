@@ -83,6 +83,19 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
 @interface EGKCardReader ()
 @property (nonatomic, assign) SCARDHANDLE cardHandle;
 @property (nonatomic, assign) SCARDCONTEXT context;
+
+/**
+ * Alternative: Read PD using Extended APDU (single command)
+ * Matches C# implementation behavior from CardReader_PCSC.cs
+ */
+- (nullable NSString *)lesePatientendatenExtended;
+
+/**
+ * Alternative: Read VD using Extended APDU (single command)
+ * Matches C# implementation behavior from CardReader_PCSC.cs
+ */
+- (nullable NSString *)leseVersichertendatenExtended;
+
 @end
 
 @implementation EGKCardReader
@@ -149,7 +162,9 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
     }
     
     // Schritt 8: Read PD (Patientendaten auslesen)
-    NSString *pdXml = [self lesePatientendaten];
+    // Note: Use lesePatientendatenExtended for single-read Extended APDU approach
+    NSString *pdXml = [self lesePatientendaten];  // Chunked approach (current)
+    // NSString *pdXml = [self lesePatientendatenExtended];  // Extended APDU (alternative)
     if (pdXml) {
         cardData.pdXmlRaw = pdXml;
         [self parsePatientendaten:pdXml intoCardData:cardData];
@@ -159,7 +174,9 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
     }
     
     // Schritt 9: Read VD (Versichertendaten auslesen)
-    NSString *vdXml = [self leseVersichertendaten];
+    // Note: Use leseVersichertendatenExtended for single-read Extended APDU approach
+    NSString *vdXml = [self leseVersichertendaten];  // Chunked approach (current)
+    // NSString *vdXml = [self leseVersichertendatenExtended];  // Extended APDU (alternative)
     if (vdXml) {
         cardData.vdXmlRaw = vdXml;
         [self parseVersichertendaten:vdXml intoCardData:cardData];
@@ -387,6 +404,93 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
 }
 
 /**
+ * Schritt 8 (Alternative): Read PD using Extended APDU - Single command approach
+ * This matches the C# reference implementation which reads all PD data in one APDU
+ */
+- (nullable NSString *)lesePatientendatenExtended {
+    [self logMessage:@"📤 APDU: Read PD Length (00 B0 81 00 02) [Extended Mode]"];
+    
+    // Step 1: Read PD length
+    NSData *lengthResponse = [self sendeAPDU:APDU_READ_PD_LENGTH length:sizeof(APDU_READ_PD_LENGTH)];
+    if (!lengthResponse || ![self pruefeStatuswort:lengthResponse]) {
+        return nil;
+    }
+    [self logMessage:[NSString stringWithFormat:@"📥 Response: %@", [self dataToHexString:lengthResponse]]];
+    
+    // Parse length (Big Endian, 2 bytes)
+    if (lengthResponse.length < 4) {
+        [self logError:@"❌ PD-Länge Response zu kurz"];
+        return nil;
+    }
+    
+    const uint8_t *bytes = (const uint8_t *)lengthResponse.bytes;
+    uint16_t pdLength = (bytes[0] << 8) | bytes[1];
+    
+    [self logMessage:[NSString stringWithFormat:@"📊 PD-Datenlänge: %u Bytes", pdLength]];
+    
+    if (pdLength == 0 || pdLength > MAX_PD_DATA_LENGTH) {
+        [self logError:[NSString stringWithFormat:@"❌ Ungültige PD-Länge: %u", pdLength]];
+        return nil;
+    }
+    
+    // Step 2: Read ALL PD data in a SINGLE Extended APDU command
+    // Following C# implementation: P1=0x00, P2=0x02, Le=pdLength
+    [self logMessage:[NSString stringWithFormat:@"📤 APDU: Read PD Extended (00 B0 00 02) Le=%u [Single Read]", pdLength]];
+    
+    // Build Extended Length APDU (3-byte Le format)
+    // Format: CLA INS P1 P2 Le1 Le2 Le3
+    uint8_t readPDExtended[8];
+    readPDExtended[0] = 0x00;  // CLA
+    readPDExtended[1] = 0xB0;  // INS (READ BINARY)
+    readPDExtended[2] = 0x00;  // P1 (high byte of offset = 0)
+    readPDExtended[3] = 0x02;  // P2 (low byte of offset = 2)
+    readPDExtended[4] = 0x00;  // Le byte 1 (must be 0x00 for extended)
+    readPDExtended[5] = (pdLength >> 8) & 0xFF;  // Le byte 2 (high)
+    readPDExtended[6] = pdLength & 0xFF;         // Le byte 3 (low)
+    
+    NSData *pdResponse = [self sendeAPDU:readPDExtended length:7];
+    if (!pdResponse || ![self pruefeStatuswort:pdResponse]) {
+        [self logError:@"❌ Fehler beim Lesen der PD-Daten (Extended)"];
+        return nil;
+    }
+    
+    // Remove status bytes
+    NSData *pdData = [pdResponse subdataWithRange:NSMakeRange(0, pdResponse.length - 2)];
+    [self logMessage:[NSString stringWithFormat:@"📥 PD gelesen: %lu Bytes (Extended Mode)", (unsigned long)pdData.length]];
+    
+    // Extract GZIP data
+    NSData *cleanedPdData = [self extractGZIPDataFromBuffer:pdData];
+    if (!cleanedPdData) {
+        [self logError:@"❌ Fehler beim Extrahieren der GZIP-Daten (PD Extended)"];
+        return nil;
+    }
+    
+    // Decompress
+    NSData *decompressedData = [self dekompromiereGZIP:cleanedPdData];
+    if (!decompressedData) {
+        [self logError:@"❌ Fehler bei GZIP-Dekomprimierung der PD-Daten (Extended)"];
+        return nil;
+    }
+    
+    // Try UTF-8 first
+    NSString *xmlString = [[NSString alloc] initWithData:decompressedData encoding:NSUTF8StringEncoding];
+    
+    // Fallback to ISO-8859-1 if UTF-8 fails
+    if (!xmlString) {
+        [self logMessage:@"⚠️ UTF-8 decoding failed, trying ISO-8859-1"];
+        xmlString = [[NSString alloc] initWithData:decompressedData encoding:NSISOLatin1StringEncoding];
+    }
+    
+    if (!xmlString) {
+        [self logError:@"❌ Fehler bei XML-String-Konvertierung (PD Extended)"];
+        return nil;
+    }
+    
+    [self logMessage:[NSString stringWithFormat:@"✅ PD-XML erfolgreich dekomprimiert (%lu Bytes) [Extended Mode]", (unsigned long)decompressedData.length]];
+    return xmlString;
+}
+
+/**
  * Schritt 9: Read VD - Versichertendaten auslesen (zweiteiliger Befehl)
  */
 - (nullable NSString *)leseVersichertendaten {
@@ -500,6 +604,102 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
     }
     
     [self logMessage:[NSString stringWithFormat:@"✅ VD-XML erfolgreich dekomprimiert (%lu Bytes)", (unsigned long)decompressedData.length]];
+    return xmlString;
+}
+
+/**
+ * Schritt 9 (Alternative): Read VD using Extended APDU - Single command approach
+ * This matches the C# reference implementation which reads all VD data in one APDU
+ */
+- (nullable NSString *)leseVersichertendatenExtended {
+    [self logMessage:@"📤 APDU: Read VD Length (00 B0 82 00 08) [Extended Mode]"];
+    
+    // Step 1: Read VD length/pointer structure
+    NSData *lengthResponse = [self sendeAPDU:APDU_READ_VD_LENGTH length:sizeof(APDU_READ_VD_LENGTH)];
+    if (!lengthResponse || ![self pruefeStatuswort:lengthResponse]) {
+        return nil;
+    }
+    [self logMessage:[NSString stringWithFormat:@"📥 Response: %@", [self dataToHexString:lengthResponse]]];
+    
+    // Parse pointer structure (8 bytes + 2 status bytes)
+    if (lengthResponse.length < 10) {
+        [self logError:@"❌ VD-Länge Response zu kurz"];
+        return nil;
+    }
+    
+    const uint8_t *bytes = (const uint8_t *)lengthResponse.bytes;
+    
+    // Parse all 4 offsets
+    uint16_t vdStart = (bytes[0] << 8) | bytes[1];
+    uint16_t vdEnd = (bytes[2] << 8) | bytes[3];
+    uint16_t gdvStart = (bytes[4] << 8) | bytes[5];
+    uint16_t gdvEnd = (bytes[6] << 8) | bytes[7];
+    
+    uint16_t vdLength = vdEnd - vdStart;
+    
+    [self logMessage:[NSString stringWithFormat:@"📊 VD-Container: Start=%u, End=%u, Length=%u [Extended Mode]", 
+                     vdStart, vdEnd, vdLength]];
+    [self logMessage:[NSString stringWithFormat:@"📊 GDV-Container: Start=%u, End=%u", 
+                     gdvStart, gdvEnd]];
+    
+    if (vdLength == 0 || vdLength > MAX_VD_DATA_LENGTH) {
+        [self logError:[NSString stringWithFormat:@"❌ Ungültige VD-Länge: %u", vdLength]];
+        return nil;
+    }
+    
+    // Step 2: Read ALL VD data in a SINGLE Extended APDU command
+    // Following C# implementation: P1=0x00, P2=0x08, Le=vdLength
+    [self logMessage:[NSString stringWithFormat:@"📤 APDU: Read VD Extended (00 B0 00 08) Le=%u [Single Read]", vdLength]];
+    
+    // Build Extended Length APDU
+    uint8_t readVDExtended[8];
+    readVDExtended[0] = 0x00;  // CLA
+    readVDExtended[1] = 0xB0;  // INS (READ BINARY)
+    readVDExtended[2] = 0x00;  // P1 (high byte of offset = 0)
+    readVDExtended[3] = 0x08;  // P2 (low byte of offset = 8, matching vdStart)
+    readVDExtended[4] = 0x00;  // Le byte 1 (must be 0x00 for extended)
+    readVDExtended[5] = (vdLength >> 8) & 0xFF;  // Le byte 2 (high)
+    readVDExtended[6] = vdLength & 0xFF;         // Le byte 3 (low)
+    
+    NSData *vdResponse = [self sendeAPDU:readVDExtended length:7];
+    if (!vdResponse || ![self pruefeStatuswort:vdResponse]) {
+        [self logError:@"❌ Fehler beim Lesen der VD-Daten (Extended)"];
+        return nil;
+    }
+    
+    // Remove status bytes
+    NSData *vdData = [vdResponse subdataWithRange:NSMakeRange(0, vdResponse.length - 2)];
+    [self logMessage:[NSString stringWithFormat:@"📥 VD gelesen: %lu Bytes (Extended Mode)", (unsigned long)vdData.length]];
+    
+    // Extract GZIP data
+    NSData *cleanedVdData = [self extractGZIPDataFromBuffer:vdData];
+    if (!cleanedVdData) {
+        [self logError:@"❌ Fehler beim Extrahieren der GZIP-Daten (VD Extended)"];
+        return nil;
+    }
+    
+    // Decompress
+    NSData *decompressedData = [self dekompromiereGZIP:cleanedVdData];
+    if (!decompressedData) {
+        [self logError:@"❌ Fehler bei GZIP-Dekomprimierung der VD-Daten (Extended)"];
+        return nil;
+    }
+    
+    // Try UTF-8 first
+    NSString *xmlString = [[NSString alloc] initWithData:decompressedData encoding:NSUTF8StringEncoding];
+    
+    // Fallback to ISO-8859-1 if UTF-8 fails
+    if (!xmlString) {
+        [self logMessage:@"⚠️ UTF-8 decoding failed, trying ISO-8859-1"];
+        xmlString = [[NSString alloc] initWithData:decompressedData encoding:NSISOLatin1StringEncoding];
+    }
+    
+    if (!xmlString) {
+        [self logError:@"❌ Fehler bei XML-String-Konvertierung (VD Extended)"];
+        return nil;
+    }
+    
+    [self logMessage:[NSString stringWithFormat:@"✅ VD-XML erfolgreich dekomprimiert (%lu Bytes) [Extended Mode]", (unsigned long)decompressedData.length]];
     return xmlString;
 }
 
