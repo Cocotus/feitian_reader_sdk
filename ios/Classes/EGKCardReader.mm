@@ -187,6 +187,7 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
  * Schritt 1: Reset CT - Kartenleser zurücksetzen
  */
 - (BOOL)resetteKartenleser {
+        return YES;
     [self logMessage:@"📤 APDU: Reset CT (20 11 00 00 00)"];
     NSData *response = [self sendeAPDU:APDU_RESET_CT length:sizeof(APDU_RESET_CT)];
     if (!response || ![self pruefeStatuswort:response]) {
@@ -194,12 +195,13 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
     }
     [self logMessage:[NSString stringWithFormat:@"📥 Response: %@", [self dataToHexString:response]]];
     return YES;
-}
+} 
 
 /**
  * Schritt 2: Request ICC - Karte anfordern
  */
 - (BOOL)fordereKarteAn {
+        return YES;
     [self logMessage:@"📤 APDU: Request ICC (20 12 01 00 01 05)"];
     NSData *response = [self sendeAPDU:APDU_REQUEST_ICC length:sizeof(APDU_REQUEST_ICC)];
     if (!response || ![self pruefeStatuswort:response]) {
@@ -207,7 +209,7 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
     }
     [self logMessage:[NSString stringWithFormat:@"📥 Response: %@", [self dataToHexString:response]]];
     return YES;
-}
+} 
 
 /**
  * Schritt 3: Select EGK Root - Root Application selektieren
