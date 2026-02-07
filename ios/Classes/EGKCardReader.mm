@@ -313,19 +313,35 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
         return nil;
     }
     
-    // Schritt 8.2: PD-Daten mit ermittelter Länge auslesen
-    uint8_t readPDCmd[] = {0x00, 0xB0, 0x00, 0x02, 0x00};
-    readPDCmd[4] = (uint8_t)(pdLength > 255 ? 0 : pdLength); // Le Byte
+    // Schritt 8.2: PD-Daten in mehreren Chunks auslesen (Le=0x00 bedeutet max. 256 Bytes)
+    NSMutableData *fullData = [NSMutableData data];
+    uint16_t offset = 0x0002; // Nach den 2 Längen-Bytes
     
-    [self logMessage:[NSString stringWithFormat:@"📤 APDU: Read PD Data (00 B0 00 02 %02X)", readPDCmd[4]]];
-    NSData *pdResponse = [self sendeAPDU:readPDCmd length:sizeof(readPDCmd)];
-    if (!pdResponse || ![self pruefeStatuswort:pdResponse]) {
-        return nil;
+    while (fullData.length < pdLength) {
+        uint8_t p1 = (offset >> 8) & 0xFF;
+        uint8_t p2 = offset & 0xFF;
+        
+        // Le=0x00 bedeutet "maximal 256 Bytes lesen"
+        uint8_t readPDCmd[] = {0x00, 0xB0, p1, p2, 0x00};
+        
+        [self logMessage:[NSString stringWithFormat:@"📤 APDU: Read PD Chunk (00 B0 %02X %02X 00)", p1, p2]];
+        NSData *chunkResponse = [self sendeAPDU:readPDCmd length:sizeof(readPDCmd)];
+        if (!chunkResponse || ![self pruefeStatuswort:chunkResponse]) {
+            return nil;
+        }
+        
+        // Entferne Status-Bytes und füge Chunk hinzu
+        NSData *chunk = [chunkResponse subdataWithRange:NSMakeRange(0, chunkResponse.length - 2)];
+        [fullData appendData:chunk];
+        offset += chunk.length;
+        
+        [self logMessage:[NSString stringWithFormat:@"📥 Chunk gelesen: %lu Bytes (gesamt: %lu/%d)", 
+                         (unsigned long)chunk.length, 
+                         (unsigned long)fullData.length, 
+                         pdLength]];
     }
-    [self logMessage:[NSString stringWithFormat:@"📥 Response: %lu Bytes empfangen", (unsigned long)pdResponse.length - 2]];
     
-    // Entferne Status-Bytes
-    NSData *pdData = [pdResponse subdataWithRange:NSMakeRange(0, pdResponse.length - 2)];
+    NSData *pdData = fullData;
     
     // GZIP-Dekomprimierung
     NSData *decompressedData = [self dekompromiereGZIP:pdData];
@@ -372,19 +388,35 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
         return nil;
     }
     
-    // Schritt 9.2: VD-Daten mit ermittelter Länge auslesen
-    uint8_t readVDCmd[] = {0x00, 0xB0, 0x00, 0x08, 0x00};
-    readVDCmd[4] = (uint8_t)(vdLength > 255 ? 0 : vdLength); // Le Byte
+    // Schritt 9.2: VD-Daten in mehreren Chunks auslesen (Le=0x00 bedeutet max. 256 Bytes)
+    NSMutableData *fullData = [NSMutableData data];
+    uint16_t offset = 0x0008; // Nach den 8 Header-Bytes
     
-    [self logMessage:[NSString stringWithFormat:@"📤 APDU: Read VD Data (00 B0 00 08 %02X)", readVDCmd[4]]];
-    NSData *vdResponse = [self sendeAPDU:readVDCmd length:sizeof(readVDCmd)];
-    if (!vdResponse || ![self pruefeStatuswort:vdResponse]) {
-        return nil;
+    while (fullData.length < vdLength) {
+        uint8_t p1 = (offset >> 8) & 0xFF;
+        uint8_t p2 = offset & 0xFF;
+        
+        // Le=0x00 bedeutet "maximal 256 Bytes lesen"
+        uint8_t readVDCmd[] = {0x00, 0xB0, p1, p2, 0x00};
+        
+        [self logMessage:[NSString stringWithFormat:@"📤 APDU: Read VD Chunk (00 B0 %02X %02X 00)", p1, p2]];
+        NSData *chunkResponse = [self sendeAPDU:readVDCmd length:sizeof(readVDCmd)];
+        if (!chunkResponse || ![self pruefeStatuswort:chunkResponse]) {
+            return nil;
+        }
+        
+        // Entferne Status-Bytes und füge Chunk hinzu
+        NSData *chunk = [chunkResponse subdataWithRange:NSMakeRange(0, chunkResponse.length - 2)];
+        [fullData appendData:chunk];
+        offset += chunk.length;
+        
+        [self logMessage:[NSString stringWithFormat:@"📥 Chunk gelesen: %lu Bytes (gesamt: %lu/%d)", 
+                         (unsigned long)chunk.length, 
+                         (unsigned long)fullData.length, 
+                         vdLength]];
     }
-    [self logMessage:[NSString stringWithFormat:@"📥 Response: %lu Bytes empfangen", (unsigned long)vdResponse.length - 2]];
     
-    // Entferne Status-Bytes
-    NSData *vdData = [vdResponse subdataWithRange:NSMakeRange(0, vdResponse.length - 2)];
+    NSData *vdData = fullData;
     
     // GZIP-Dekomprimierung
     NSData *decompressedData = [self dekompromiereGZIP:vdData];
