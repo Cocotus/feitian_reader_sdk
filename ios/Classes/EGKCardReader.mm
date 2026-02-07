@@ -878,27 +878,26 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
  * @return YES if stream appears valid, NO otherwise
  */
 - (BOOL)validateGZIPStream:(NSData *)data {
-    if (data.length < 18) {  // Minimum valid GZIP file size
-        [self logError:[NSString stringWithFormat:@"❌ GZIP data too short: %lu bytes", (unsigned long)data.length]];
+    // Minimum valid GZIP: 10-byte header + 8-byte footer = 18 bytes total
+    if (data.length < 18) {
+        [self logError:[NSString stringWithFormat:@"❌ GZIP data too short: %lu bytes (minimum 18)", (unsigned long)data.length]];
         return NO;
     }
     
     const uint8_t *bytes = (const uint8_t *)data.bytes;
     
-    // Check magic number
+    // Check magic number (bytes 0-1)
     if (bytes[0] != 0x1F || bytes[1] != 0x8B) {
         [self logError:[NSString stringWithFormat:@"❌ Invalid GZIP magic: %02X %02X", bytes[0], bytes[1]]];
         return NO;
     }
     
-    // Check compression method (should be 08 for DEFLATE)
+    // Check compression method (byte 2, should be 08 for DEFLATE)
     if (bytes[2] != 0x08) {
         [self logError:[NSString stringWithFormat:@"❌ Invalid compression method: %02X", bytes[2]]];
         return NO;
     }
     
-    // Check for GZIP footer (last 8 bytes: CRC32 + uncompressed size)
-    // This is a basic check - a complete GZIP stream should have these
     [self logMessage:[NSString stringWithFormat:@"✅ GZIP stream validation passed (%lu bytes)", (unsigned long)data.length]];
     return YES;
 }
