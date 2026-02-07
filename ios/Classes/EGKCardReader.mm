@@ -343,8 +343,34 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
     
     NSData *pdData = fullData;
     
-    // GZIP-Dekomprimierung
-    NSData *decompressedData = [self dekompromiereGZIP:pdData];
+    // NEW: Find GZIP magic number (1F 8B) and extract only valid GZIP data (consistency with C# and VD)
+    const uint8_t *bytes = (const uint8_t *)pdData.bytes;
+    NSUInteger gzipStart = 0;
+    BOOL foundGzipHeader = NO;
+    
+    // Search for GZIP magic number (1F 8B)
+    for (NSUInteger i = 0; i < pdData.length - 1; i++) {
+        if (bytes[i] == 0x1F && bytes[i+1] == 0x8B) {
+            gzipStart = i;
+            foundGzipHeader = YES;
+            [self logMessage:[NSString stringWithFormat:@"🔍 Found GZIP header at offset: %lu", (unsigned long)gzipStart]];
+            break;
+        }
+    }
+    
+    if (!foundGzipHeader) {
+        [self logError:@"❌ GZIP header not found in PD data"];
+        return nil;
+    }
+    
+    // Extract only the GZIP-compressed portion
+    NSData *cleanedPdData = [pdData subdataWithRange:NSMakeRange(gzipStart, pdData.length - gzipStart)];
+    [self logMessage:[NSString stringWithFormat:@"🧹 Cleaned PD data: %lu → %lu bytes", 
+                     (unsigned long)pdData.length, 
+                     (unsigned long)cleanedPdData.length]];
+    
+    // GZIP-Dekomprimierung with cleaned data
+    NSData *decompressedData = [self dekompromiereGZIP:cleanedPdData];
     if (!decompressedData) {
         [self logError:@"❌ Fehler bei GZIP-Dekomprimierung der PD-Daten"];
         return nil;
@@ -453,8 +479,34 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
     
     NSData *vdData = fullData;
     
-    // GZIP-Dekomprimierung
-    NSData *decompressedData = [self dekompromiereGZIP:vdData];
+    // NEW: Find GZIP magic number (1F 8B) and extract only valid GZIP data
+    const uint8_t *bytes = (const uint8_t *)vdData.bytes;
+    NSUInteger gzipStart = 0;
+    BOOL foundGzipHeader = NO;
+    
+    // Search for GZIP magic number (1F 8B)
+    for (NSUInteger i = 0; i < vdData.length - 1; i++) {
+        if (bytes[i] == 0x1F && bytes[i+1] == 0x8B) {
+            gzipStart = i;
+            foundGzipHeader = YES;
+            [self logMessage:[NSString stringWithFormat:@"🔍 Found GZIP header at offset: %lu", (unsigned long)gzipStart]];
+            break;
+        }
+    }
+    
+    if (!foundGzipHeader) {
+        [self logError:@"❌ GZIP header not found in VD data"];
+        return nil;
+    }
+    
+    // Extract only the GZIP-compressed portion
+    NSData *cleanedVdData = [vdData subdataWithRange:NSMakeRange(gzipStart, vdData.length - gzipStart)];
+    [self logMessage:[NSString stringWithFormat:@"🧹 Cleaned VD data: %lu → %lu bytes", 
+                     (unsigned long)vdData.length, 
+                     (unsigned long)cleanedVdData.length]];
+    
+    // GZIP-Dekomprimierung with cleaned data
+    NSData *decompressedData = [self dekompromiereGZIP:cleanedVdData];
     if (!decompressedData) {
         [self logError:@"❌ Fehler bei GZIP-Dekomprimierung der VD-Daten"];
         return nil;
