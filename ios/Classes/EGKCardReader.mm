@@ -584,7 +584,7 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
  * @return Nur die GZIP-komprimierten Daten ab Magic Number, oder nil wenn nicht gefunden
  */
 - (nullable NSData *)extractGZIPDataFromBuffer:(NSData *)data {
-    if (data.length < 4) {  // Changed from 2 to 4 bytes minimum
+    if (data.length < 4) {  // Minimum size for complete GZIP header (1F 8B 08 00)
         [self logError:@"❌ Buffer zu kurz für GZIP-Suche"];
         return nil;
     }
@@ -594,7 +594,7 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
     BOOL foundGzipHeader = NO;
     
     // Search for complete GZIP header signature (1F 8B 08 00)
-    // This matches the C# implementation in CardReader_PCSC.cs line 1146
+    // This matches the C# implementation in CardReader_PCSC.cs (ReadEGKVersichertendaten method)
     for (NSUInteger i = 0; i < data.length - 3; i++) {
         if (bytes[i] == 0x1F && 
             bytes[i+1] == 0x8B && 
