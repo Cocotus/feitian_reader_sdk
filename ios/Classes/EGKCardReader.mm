@@ -403,8 +403,8 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
     // Parse all 4 offsets from the pointer structure
     uint16_t vdStart = (bytes[0] << 8) | bytes[1];    // VD container start
     uint16_t vdEnd = (bytes[2] << 8) | bytes[3];      // VD container end
-    uint16_t gdvStart = (bytes[4] << 8) | bytes[5];   // GDV container start (optional)
-    uint16_t gdvEnd = (bytes[6] << 8) | bytes[7];     // GDV container end (optional)
+    uint16_t gdvStart = (bytes[4] << 8) | bytes[5];   // GDV container start (for logging only)
+    uint16_t gdvEnd = (bytes[6] << 8) | bytes[7];     // GDV container end (for logging only)
     
     // Calculate actual VD length
     uint16_t vdLength = vdEnd - vdStart;
@@ -429,7 +429,8 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
         
         uint8_t p1 = (offset >> 8) & 0xFF;
         uint8_t p2 = offset & 0xFF;
-        uint8_t le = (uint8_t)chunkSize;
+        // Le=0x00 means "read 256 bytes", otherwise use actual chunk size
+        uint8_t le = (chunkSize == 256) ? 0x00 : (uint8_t)chunkSize;
         
         uint8_t readVDCmd[] = {0x00, 0xB0, p1, p2, le};
         
