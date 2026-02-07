@@ -887,9 +887,4 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Delay before querying b
     [self notifyError:error];
 }
 
-- (void)cardReader:(id)reader didReadCardData:(EGKCardData *)cardData {
-    // Wird bereits in readEGKCard behandelt
-    [self logMessage:@"EGKCardReader hat Daten gelesen"];
-}
-
 @end

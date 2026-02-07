@@ -30,8 +30,14 @@ class _MyAppState extends State<MyApp> {
     initPlatformState();
     platform.setMethodCallHandler(_handleMethodCall);
     _setupEventStream();
-    // ❌ REMOVED: Auto-start Bluetooth scan on app launch
-    // User must now manually trigger EGK reading
+    // Note: Auto-start Bluetooth scan removed to give user full control
+    // and to save battery. User must manually trigger EGK reading which
+    // will check for reader connectivity and card insertion.
+  }
+
+  Future<void> _handleMethodCall(MethodCall call) async {
+    // Method call handler for legacy support
+    // Most events now come through the event stream
   }
 
   @override

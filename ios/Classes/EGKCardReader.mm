@@ -28,6 +28,10 @@ static const uint8_t APDU_EJECT_ICC[] = {0x20, 0x15, 0x01, 0x00, 0x01, 0x05};   
 // Erfolgsstatus
 static const uint16_t SW_SUCCESS = 0x9000;
 
+// Maximale Datenlängen nach GEMATIK-Spezifikation
+static const uint16_t MAX_PD_DATA_LENGTH = 10000;  // Maximale Länge für Patientendaten
+static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versichertendaten
+
 @implementation EGKCardData
 
 - (NSDictionary<NSString *, id> *)toDictionary {
@@ -302,7 +306,7 @@ static const uint16_t SW_SUCCESS = 0x9000;
     uint16_t pdLength = (bytes[0] << 8) | bytes[1];
     [self logMessage:[NSString stringWithFormat:@"📊 PD-Datenlänge: %u Bytes", pdLength]];
     
-    if (pdLength == 0 || pdLength > 10000) {
+    if (pdLength == 0 || pdLength > MAX_PD_DATA_LENGTH) {
         [self logError:[NSString stringWithFormat:@"❌ Ungültige PD-Länge: %u", pdLength]];
         return nil;
     }
@@ -361,7 +365,7 @@ static const uint16_t SW_SUCCESS = 0x9000;
     uint16_t vdLength = (bytes[6] << 8) | bytes[7];
     [self logMessage:[NSString stringWithFormat:@"📊 VD-Datenlänge: %u Bytes", vdLength]];
     
-    if (vdLength == 0 || vdLength > 10000) {
+    if (vdLength == 0 || vdLength > MAX_VD_DATA_LENGTH) {
         [self logError:[NSString stringWithFormat:@"❌ Ungültige VD-Länge: %u", vdLength]];
         return nil;
     }
@@ -497,8 +501,8 @@ static const uint16_t SW_SUCCESS = 0x9000;
     stream.next_in = (Bytef *)compressedData.bytes;
     stream.avail_in = (uInt)compressedData.length;
     
-    // inflateInit2 mit windowBits=47 für GZIP-Format (16 + 15 + 16 für auto-detection)
-    int ret = inflateInit2(&stream, 47);
+    // inflateInit2 mit windowBits=31 für GZIP-Format (15 + 16 für gzip wrapper)
+    int ret = inflateInit2(&stream, 31);
     if (ret != Z_OK) {
         [self logError:[NSString stringWithFormat:@"❌ inflateInit2 Fehler: %d", ret]];
         return nil;
