@@ -525,10 +525,10 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
     [self logMessage:[NSString stringWithFormat:@"📊 GDV-Container: Start=%u, End=%u", 
                      gdvStart, gdvEnd]];
     
-    // Step 2: Read ACTUAL VD data length from offset 0x81 (matching PD approach)
+    // Step 2: Read ACTUAL VD data length from offset 0x8100 (matching PD approach)
     // This is the reliable method used successfully for PD data
-    uint8_t readVDLengthCmd[] = {0x00, 0xB0, 0x00, 0x81, 0x02};  // Read 2 bytes from offset 0x81
-    [self logMessage:@"📤 APDU: Read VD Actual Length (00 B0 00 81 02)"];
+    uint8_t readVDLengthCmd[] = {0x00, 0xB0, 0x81, 0x00, 0x02};  // Read 2 bytes from offset 0x8100
+    [self logMessage:@"📤 APDU: Read VD Actual Length (00 B0 81 00 02)"];
     
     NSData *actualLengthResponse = [self sendeAPDU:readVDLengthCmd length:sizeof(readVDLengthCmd)];
     uint16_t vdLength;
@@ -538,7 +538,7 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
     } else {
         const uint8_t *lengthBytes = (const uint8_t *)actualLengthResponse.bytes;
         uint16_t actualVDLength = (lengthBytes[0] << 8) | lengthBytes[1];
-        [self logMessage:[NSString stringWithFormat:@"📊 VD Actual Length: %u bytes (from offset 0x81)", actualVDLength]];
+        [self logMessage:[NSString stringWithFormat:@"📊 VD Actual Length: %u bytes (from offset 0x8100)", actualVDLength]];
         
         // Validate: pointer-based vs actual length
         if (actualVDLength != vdLengthFromPointer) {
@@ -553,13 +553,10 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
         return nil;
     }
     
-    // Step 3: Read VD data starting from the FIRST LENGTH BYTE (offset 0x81)
-    // NOT from vdStart which is the container start (includes the pointer structure)
+    // Step 3: Read VD data starting from offset 0x8102 (after the 2-byte length at 0x8100)
+    // This matches the PD approach which reads from offset 0x0002 relative to 0x8100
     NSMutableData *fullData = [NSMutableData data];
-    uint16_t offset = 0x0081;  // Start reading from offset where actual data length is stored
-    
-    // Skip the 2-byte length header
-    offset += 2;  // Move to actual GZIP data start (0x0083)
+    uint16_t offset = 0x8102;  // Start reading GZIP data after the 2-byte length header
     
     while (fullData.length < vdLength) {
         uint16_t remainingBytes = vdLength - (uint16_t)fullData.length;
