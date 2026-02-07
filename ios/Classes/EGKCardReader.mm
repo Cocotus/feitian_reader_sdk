@@ -579,11 +579,12 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
 
 /**
  * Extrahiert GZIP-Daten aus einem Buffer durch Suche nach GZIP Magic Number
- * @param data Rohdaten, die GZIP Magic Number (1F 8B) enthalten können
+ * Matches C# implementation behavior from CardReader_PCSC.cs
+ * @param data Rohdaten, die GZIP Magic Number (1F 8B 08 00) enthalten können
  * @return Nur die GZIP-komprimierten Daten ab Magic Number, oder nil wenn nicht gefunden
  */
 - (nullable NSData *)extractGZIPDataFromBuffer:(NSData *)data {
-    if (data.length < 2) {
+    if (data.length < 4) {  // Minimum size for complete GZIP header (1F 8B 08 00)
         [self logError:@"❌ Buffer zu kurz für GZIP-Suche"];
         return nil;
     }
@@ -592,22 +593,28 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
     NSUInteger gzipStart = 0;
     BOOL foundGzipHeader = NO;
     
-    // Search for GZIP magic number (1F 8B)
-    for (NSUInteger i = 0; i < data.length - 1; i++) {
-        if (bytes[i] == 0x1F && bytes[i+1] == 0x8B) {
+    // Search for complete GZIP header signature (1F 8B 08 00)
+    // This matches the C# implementation in CardReader_PCSC.cs (ReadEGKVersichertendaten method)
+    for (NSUInteger i = 0; i < data.length - 3; i++) {
+        if (bytes[i] == 0x1F && 
+            bytes[i+1] == 0x8B && 
+            bytes[i+2] == 0x08 &&
+            bytes[i+3] == 0x00) {
             gzipStart = i;
             foundGzipHeader = YES;
-            [self logMessage:[NSString stringWithFormat:@"🔍 Found GZIP header at offset: %lu", (unsigned long)gzipStart]];
+            [self logMessage:[NSString stringWithFormat:@"🔍 Found complete GZIP header (1F 8B 08 00) at offset: %lu", (unsigned long)gzipStart]];
             break;
         }
     }
     
     if (!foundGzipHeader) {
-        [self logError:@"❌ GZIP header not found in data"];
+        // Log hex dump for debugging
+        NSString *hexDump = [self dataToHexString:[data subdataWithRange:NSMakeRange(0, MIN(32, data.length))]];
+        [self logError:[NSString stringWithFormat:@"❌ Complete GZIP header (1F 8B 08 00) not found. First 32 bytes: %@", hexDump]];
         return nil;
     }
     
-    // Extract only the GZIP-compressed portion
+    // Extract only the GZIP-compressed portion starting from the complete header
     NSData *cleanedData = [data subdataWithRange:NSMakeRange(gzipStart, data.length - gzipStart)];
     [self logMessage:[NSString stringWithFormat:@"🧹 Cleaned data: %lu → %lu bytes", 
                      (unsigned long)data.length, 
@@ -661,8 +668,20 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
         ret = inflate(&stream, Z_NO_FLUSH);
         
         if (ret != Z_OK && ret != Z_STREAM_END) {
+            // Enhanced error logging with more context
+            NSString *errorMsg = [NSString stringWithFormat:@"❌ inflate Fehler: %d", ret];
+            if (ret == Z_BUF_ERROR) {
+                errorMsg = [errorMsg stringByAppendingString:@" (Z_BUF_ERROR: incomplete or corrupted GZIP data)"];
+                // Log the problematic data for debugging
+                NSString *hexDump = [self dataToHexString:[compressedData subdataWithRange:NSMakeRange(0, MIN(64, compressedData.length))]];
+                [self logError:[NSString stringWithFormat:@"First 64 bytes of compressed data: %@", hexDump]];
+            } else if (ret == Z_DATA_ERROR) {
+                errorMsg = [errorMsg stringByAppendingString:@" (Z_DATA_ERROR: data integrity error)"];
+            } else if (ret == Z_MEM_ERROR) {
+                errorMsg = [errorMsg stringByAppendingString:@" (Z_MEM_ERROR: insufficient memory)"];
+            }
             inflateEnd(&stream);
-            [self logError:[NSString stringWithFormat:@"❌ inflate Fehler: %d", ret]];
+            [self logError:errorMsg];
             return nil;
         }
         
