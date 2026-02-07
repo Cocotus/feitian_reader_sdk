@@ -163,8 +163,8 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
     
     // Schritt 8: Read PD (Patientendaten auslesen)
     // Note: Use lesePatientendatenExtended for single-read Extended APDU approach
-    NSString *pdXml = [self lesePatientendaten];  // Chunked approach (current)
-    // NSString *pdXml = [self lesePatientendatenExtended];  // Extended APDU (alternative)
+    //  NSString *pdXml = [self lesePatientendaten];  // Chunked approach (current)
+   NSString *pdXml = [self lesePatientendatenExtended];  // Extended APDU (alternative)
     if (pdXml) {
         cardData.pdXmlRaw = pdXml;
         [self parsePatientendaten:pdXml intoCardData:cardData];
@@ -175,8 +175,8 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
     
     // Schritt 9: Read VD (Versichertendaten auslesen)
     // Note: Use leseVersichertendatenExtended for single-read Extended APDU approach
-    NSString *vdXml = [self leseVersichertendaten];  // Chunked approach (current)
-    // NSString *vdXml = [self leseVersichertendatenExtended];  // Extended APDU (alternative)
+    //  NSString *vdXml = [self leseVersichertendaten];  // Chunked approach (current)
+    NSString *vdXml = [self leseVersichertendatenExtended];  // Extended APDU (alternative)
     if (vdXml) {
         cardData.vdXmlRaw = vdXml;
         [self parseVersichertendaten:vdXml intoCardData:cardData];
