@@ -494,9 +494,10 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
  * Schritt 9: Read VD - Versichertendaten auslesen (zweiteiliger Befehl)
  */
 - (nullable NSString *)leseVersichertendaten {
-    [self logMessage:@"📤 APDU: Read VD Length (00 B0 82 00 08)"];
+    [self logMessage:@"📤 APDU: Read VD Pointer Structure (00 B0 82 00 08)"];
     
-    // Step 1: Read VD pointer structure (8 bytes)
+    // Step 1: Read VD pointer structure (8 bytes) from offset 0x8200
+    // This returns: VD start offset, VD end offset, GDV start offset, GDV end offset
     NSData *lengthResponse = [self sendeAPDU:APDU_READ_VD_LENGTH length:sizeof(APDU_READ_VD_LENGTH)];
     if (!lengthResponse || ![self pruefeStatuswort:lengthResponse]) {
         return nil;
@@ -518,45 +519,23 @@ static const uint16_t MAX_VD_DATA_LENGTH = 10000;  // Maximale Länge für Versi
     uint16_t gdvEnd = (bytes[6] << 8) | bytes[7];     // GDV container end
     
     // Calculate VD length from pointer structure
-    uint16_t vdLengthFromPointer = vdEnd - vdStart;
+    uint16_t vdLength = vdEnd - vdStart;
     
-    [self logMessage:[NSString stringWithFormat:@"📊 VD-Container: Start=%u, End=%u, Length=%u (from pointer)", 
-                     vdStart, vdEnd, vdLengthFromPointer]];
-    [self logMessage:[NSString stringWithFormat:@"📊 GDV-Container: Start=%u, End=%u", 
-                     gdvStart, gdvEnd]];
-    
-    // Step 2: Read ACTUAL VD data length from offset 0x8100 (matching PD approach)
-    // This is the reliable method used successfully for PD data
-    uint8_t readVDLengthCmd[] = {0x00, 0xB0, 0x81, 0x00, 0x02};  // Read 2 bytes from offset 0x8100
-    [self logMessage:@"📤 APDU: Read VD Actual Length (00 B0 81 00 02)"];
-    
-    NSData *actualLengthResponse = [self sendeAPDU:readVDLengthCmd length:sizeof(readVDLengthCmd)];
-    uint16_t vdLength;
-    if (!actualLengthResponse || ![self pruefeStatuswort:actualLengthResponse]) {
-        [self logMessage:@"⚠️ Could not read actual VD length, falling back to pointer-based calculation"];
-        vdLength = vdLengthFromPointer;
-    } else {
-        const uint8_t *lengthBytes = (const uint8_t *)actualLengthResponse.bytes;
-        uint16_t actualVDLength = (lengthBytes[0] << 8) | lengthBytes[1];
-        [self logMessage:[NSString stringWithFormat:@"📊 VD Actual Length: %u bytes (from offset 0x8100)", actualVDLength]];
-        
-        // Validate: pointer-based vs actual length
-        if (actualVDLength != vdLengthFromPointer) {
-            [self logMessage:[NSString stringWithFormat:@"⚠️ Length mismatch: pointer=%u, actual=%u (using actual)", 
-                            vdLengthFromPointer, actualVDLength]];
-        }
-        vdLength = actualVDLength;  // Use the actual length
-    }
+    [self logMessage:[NSString stringWithFormat:@"📊 VD-Container: Start=0x%04X (%u), End=0x%04X (%u), Length=%u bytes", 
+                     vdStart, vdStart, vdEnd, vdEnd, vdLength]];
+    [self logMessage:[NSString stringWithFormat:@"📊 GDV-Container: Start=0x%04X (%u), End=0x%04X (%u)", 
+                     gdvStart, gdvStart, gdvEnd, gdvEnd]];
     
     if (vdLength == 0 || vdLength > MAX_VD_DATA_LENGTH) {
         [self logError:[NSString stringWithFormat:@"❌ Ungültige VD-Länge: %u", vdLength]];
         return nil;
     }
     
-    // Step 3: Read VD data starting from offset 0x8102 (after the 2-byte length at 0x8100)
-    // This matches the PD approach which reads from offset 0x0002 relative to 0x8100
+    // Step 2: Read VD data from file offset vdStart (matching C# reference implementation)
+    // According to C# CardReader_PCSC.cs: P1 = 0x0, P2 = 0x8, Le = VDContainerEndePosition - VDContainerBeginnPosition
+    // The VD data starts at file offset indicated by vdStart (typically 0x0008)
     NSMutableData *fullData = [NSMutableData data];
-    uint16_t offset = 0x8102;  // Start reading GZIP data after the 2-byte length header
+    uint16_t offset = vdStart;  // Start reading from VD container start position (e.g., 0x0008)
     
     while (fullData.length < vdLength) {
         uint16_t remainingBytes = vdLength - (uint16_t)fullData.length;
