@@ -171,7 +171,7 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Verzögerung vor Batter
         // Bluetooth-Kartenleser trennen
         if (_interface && gBluetoothID.length > 0) {
             [self logMessage:[NSString stringWithFormat:@"Trenne Bluetooth-Kartenleser: %@", gBluetoothID]];
-            [_interface disConnectCurrentPeripheralReader];  // ✅ KORREKT
+            [_interface disConnectCurrentPeripheralReader];
         }
         
         // Status zurücksetzen
@@ -189,6 +189,21 @@ static const NSTimeInterval READER_READY_DELAY = 0.5; // Verzögerung vor Batter
     } else {
         [self logMessage:@"Kein Kartenleser zum Trennen verbunden"];
     }
+    
+    // ✅ FIX: Complete cleanup of ReaderInterface to prevent duplicate callbacks
+    // This ensures a clean state for next connection and stops all delegate events
+    if (_interface) {
+        [self logMessage:@"Bereinige ReaderInterface..."];
+        [_interface setDelegate:nil];  // Stop receiving delegate callbacks
+        _interface = nil;               // Release interface object
+        [self logMessage:@"ReaderInterface bereinigt"];
+    }
+    
+    // ✅ FIX: Reset initialization flag so next scan creates fresh interface
+    _isReaderInterfaceInitialized = NO;
+    
+    // ✅ FIX: Stop any active BLE scanning
+    [self stopScanBLEDevice];
 }
 
 - (void)getBatteryLevel {
