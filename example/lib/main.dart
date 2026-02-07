@@ -48,9 +48,10 @@ class _MyAppState extends State<MyApp> {
 
   void _setupEventStream() {
     _eventSubscription = _feitianReaderPlugin.eventStream.listen((event) {
+      final eventType = event['event'];
+      
+      // Update state first
       setState(() {
-        final eventType = event['event'];
-        
         if (eventType == 'log') {
           // Add log to display
           _logs.insert(0, event['message']);
@@ -87,41 +88,33 @@ class _MyAppState extends State<MyApp> {
         } else if (eventType == 'error') {
           _logs.insert(0, '⚠️ FEHLER: ${event['error']}');
         } else if (eventType == 'noDataMobileMode') {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('❌ Keine Karte eingesteckt!'),
-                backgroundColor: Colors.red,
-                duration: Duration(seconds: 3),
-              ),
-            );
-          }
           _logs.insert(0, '❌ Keine Karte eingesteckt!');
         } else if (eventType == 'noBluetooth') {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('❌ Kartenleser nicht verbunden!'),
-                backgroundColor: Colors.orange,
-                duration: Duration(seconds: 3),
-              ),
-            );
-          }
           _logs.insert(0, '❌ Kartenleser nicht verbunden!');
         } else if (eventType == 'lowBattery') {
           final battery = event['level'] as int;
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('🔋 Batterie niedrig: $battery%'),
-                backgroundColor: Colors.deepOrange,
-                duration: const Duration(seconds: 5),
-              ),
-            );
-          }
           _logs.insert(0, '🔋 Batterie niedrig: $battery%');
         }
       });
+
+      // Show Snackbars AFTER setState()
+      if (eventType == 'noDataMobileMode') {
+        _showSnackBar(
+          '❌ Keine Karte eingesteckt!',
+          Colors.red,
+        );
+      } else if (eventType == 'noBluetooth') {
+        _showSnackBar(
+          '❌ Kartenleser nicht verbunden!',
+          Colors.orange,
+        );
+      } else if (eventType == 'lowBattery') {
+        final battery = event['level'] as int;
+        _showSnackBar(
+          '🔋 Batterie niedrig: $battery%',
+          Colors.deepOrange,
+        );
+      }
     });
   }
 
@@ -140,21 +133,21 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
-  Future<void> _readEGKCard() async {
-    // Check if reader is connected
-    if (!_isConnected) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('❌ Kartenleser nicht verbunden! Bitte zuerst verbinden.'),
-            backgroundColor: Colors.orange,
-            duration: Duration(seconds: 3),
-          ),
-        );
-      }
-      _logs.insert(0, '❌ Versuch EGK zu lesen ohne Verbindung');
-      return;
+  void _showSnackBar(String message, Color backgroundColor) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: backgroundColor,
+          duration: const Duration(seconds: 3),
+        ),
+      );
     }
+  }
+
+  Future<void> _readEGKCard() async {
+    // Connection check is now handled by readEGKCardOnDemand
+    // This method will trigger 'noBluetooth' or 'noDataMobileMode' events
     
     try {
       setState(() {
@@ -165,6 +158,7 @@ class _MyAppState extends State<MyApp> {
       await _feitianReaderPlugin.readEGKCardOnDemand();
     } catch (e) {
       _logs.insert(0, '❌ EGK-Lesevorgang fehlgeschlagen: $e');
+      _showSnackBar('❌ Fehler: $e', Colors.red);
     }
   }
 
@@ -228,7 +222,7 @@ class _MyAppState extends State<MyApp> {
               
               // Main Action Button - EGK Auslesen
               ElevatedButton.icon(
-                onPressed: _isConnected ? _readEGKCard : null,
+                onPressed: _readEGKCard,
                 icon: const Icon(Icons.credit_card, size: 28),
                 label: const Text(
                   'EGK Auslesen',
@@ -243,17 +237,6 @@ class _MyAppState extends State<MyApp> {
                 ),
               ),
               const SizedBox(height: 8),
-              
-              // Helper text when not connected
-              if (!_isConnected)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8.0),
-                  child: Text(
-                    'ℹ️ Bitte Kartenleser per Bluetooth verbinden, bevor Sie die EGK auslesen können.',
-                    style: TextStyle(fontSize: 12, color: Colors.black54, fontStyle: FontStyle.italic),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
               
               const SizedBox(height: 16),
               
